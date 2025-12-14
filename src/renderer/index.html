@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Usage Widget</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div id="app">
+        <div class="widget-container" id="widgetContainer">
+            <!-- Title Bar -->
+            <div class="title-bar" id="titleBar">
+                <div class="title">Claude Usage</div>
+                <div class="controls">
+                    <button class="control-btn settings-btn" id="settingsBtn" title="Settings">⚙️</button>
+                    <button class="control-btn refresh-btn" id="refreshBtn" title="Refresh">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M23 4v6h-6M1 20v-6h6" />
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                    </button>
+                    <button class="control-btn minimize-btn" id="minimizeBtn" title="Minimise to System Tray">−</button>
+                    <button class="control-btn close-btn" id="closeBtn" title="Exit Application">×</button>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div class="loading-container" id="loadingContainer">
+                <div class="spinner"></div>
+                <p>Loading usage data...</p>
+            </div>
+
+            <!-- Login Required State -->
+            <div class="login-container" id="loginContainer" style="display: none;">
+                <div class="login-content">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                        <polyline points="10 17 15 12 10 7" />
+                        <line x1="15" y1="12" x2="3" y2="12" />
+                    </svg>
+                    <div class="login-text-group">
+                        <h3>Login Required</h3>
+                        <p>Log in to view usage stats</p>
+                    </div>
+                    <button class="login-btn" id="loginBtn">Log In</button>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="content" id="mainContent" style="display: none;">
+                <!-- Session Usage -->
+                <div class="usage-section">
+                    <span class="usage-label">Current Session</span>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="sessionProgress" style="width: 0%"></div>
+                    </div>
+                    <span class="usage-percentage" id="sessionPercentage">0%</span>
+                    <div class="timer-container">
+                        <div class="timer-text" id="sessionTimeText">--:--</div>
+                        <svg class="mini-timer" width="24" height="24" viewBox="0 0 24 24">
+                            <circle class="timer-bg" cx="12" cy="12" r="10" />
+                            <circle class="timer-progress" id="sessionTimer" cx="12" cy="12" r="10"
+                                style="stroke-dasharray: 63; stroke-dashoffset: 63" />
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Weekly Usage -->
+                <div class="usage-section">
+                    <span class="usage-label">Weekly Limit</span>
+                    <div class="progress-bar">
+                        <div class="progress-fill weekly" id="weeklyProgress" style="width: 0%"></div>
+                    </div>
+                    <span class="usage-percentage" id="weeklyPercentage">0%</span>
+                    <div class="timer-container">
+                        <div class="timer-text" id="weeklyTimeText">--:--</div>
+                        <svg class="mini-timer" width="24" height="24" viewBox="0 0 24 24">
+                            <circle class="timer-bg" cx="12" cy="12" r="10" />
+                            <circle class="timer-progress weekly" id="weeklyTimer" cx="12" cy="12" r="10"
+                                style="stroke-dasharray: 63; stroke-dashoffset: 63" />
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Hidden Footer element (removed) -->
+                <span id="lastUpdate" style="display: none;"></span>
+            </div>
+
+            <!-- Settings Overlay -->
+            <div class="settings-overlay" id="settingsOverlay" style="display: none;">
+                <div class="settings-content">
+                    <button class="icon-close-settings-btn" id="closeSettingsBtn" title="Close">×</button>
+                    <p class="disclaimer">
+                        <strong>Disclaimer:</strong> Unofficial tool not affiliated with Anthropic. Use at your own discretion.
+                    </p>
+
+                    <button class="coffee-btn" id="coffeeBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 8h1a4 4 0 1 1 0 8h-1"/>
+                            <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/>
+                            <line x1="6" y1="2" x2="6" y2="4"/>
+                            <line x1="10" y1="2" x2="10" y2="4"/>
+                            <line x1="14" y1="2" x2="14" y2="4"/>
+                        </svg>
+                        If you find this useful, buy me a coffee!
+                    </button>
+
+                    <div class="settings-actions">
+                        <button class="logout-btn" id="logoutBtn">Log Out</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
