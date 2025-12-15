@@ -242,9 +242,15 @@ function updateProgressBar(progressElement, percentageElement, value, isWeekly =
 function updateTimer(timerElement, textElement, resetsAt, totalMinutes) {
     if (!resetsAt) {
         textElement.textContent = '--:--';
+        textElement.style.opacity = '0.5';
+        textElement.title = 'Starts when a message is sent';
         timerElement.style.strokeDashoffset = 63;
         return;
     }
+
+    // Clear the greyed out styling and tooltip when timer is active
+    textElement.style.opacity = '1';
+    textElement.title = '';
 
     const resetDate = new Date(resetsAt);
     const now = new Date();
