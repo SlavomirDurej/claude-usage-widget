@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
   closeWindow: () => ipcRenderer.send('close-window'),
   openLogin: () => ipcRenderer.send('open-login'),
+  openSettings: () => ipcRenderer.send('open-settings'),
 
   // Window position
   getWindowPosition: () => ipcRenderer.invoke('get-window-position'),
@@ -36,5 +37,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // API
   fetchUsageData: () => ipcRenderer.invoke('fetch-usage-data'),
-  openExternal: (url) => ipcRenderer.send('open-external', url)
+  openExternal: (url) => ipcRenderer.send('open-external', url),
+
+  // Color preferences
+  getColorPreferences: () => ipcRenderer.invoke('get-color-preferences'),
+  setColorPreferences: (preferences) => ipcRenderer.invoke('set-color-preferences', preferences),
+  notifyColorChange: (preferences) => ipcRenderer.invoke('notify-color-change', preferences),
+  onColorsChanged: (callback) => {
+    ipcRenderer.on('colors-changed', (event, preferences) => callback(preferences));
+  }
 });

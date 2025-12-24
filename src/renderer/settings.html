@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Claude Usage Widget</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="settings-styles.css">
+</head>
+
+<body>
+    <div id="settings-app">
+        <!-- Title Bar -->
+        <div class="title-bar" id="titleBar">
+            <div class="title">
+                <img src="../../assets/logo.png" alt="Logo" class="app-logo">
+                <span>Settings</span>
+            </div>
+            <div class="controls">
+                <button class="control-btn minimize-btn" id="minimizeBtn" title="Minimize">−</button>
+                <button class="control-btn close-btn" id="closeBtn" title="Close">×</button>
+            </div>
+        </div>
+
+        <div class="settings-container">
+
+            <!-- Color Customization -->
+            <section class="settings-section">
+                <h2>Customize Colors</h2>
+
+                <div class="color-grid-2col">
+                    <div class="color-item">
+                        <label>Normal Start</label>
+                        <input type="color" id="colorNormalStart" value="#8b5cf6">
+                    </div>
+
+                    <div class="color-item">
+                        <label>Normal End</label>
+                        <input type="color" id="colorNormalEnd" value="#a78bfa">
+                    </div>
+
+                    <div class="color-item">
+                        <label>Warning Start</label>
+                        <input type="color" id="colorWarningStart" value="#f59e0b">
+                    </div>
+
+                    <div class="color-item">
+                        <label>Warning End</label>
+                        <input type="color" id="colorWarningEnd" value="#fbbf24">
+                    </div>
+
+                    <div class="color-item">
+                        <label>Danger Start</label>
+                        <input type="color" id="colorDangerStart" value="#ef4444">
+                    </div>
+
+                    <div class="color-item">
+                        <label>Danger End</label>
+                        <input type="color" id="colorDangerEnd" value="#f87171">
+                    </div>
+                </div>
+
+                <button class="btn-secondary" id="resetColorsBtn">Reset to Defaults</button>
+            </section>
+
+            <div class="divider"></div>
+
+            <!-- Account Actions -->
+            <section class="settings-section">
+                <h2>Account</h2>
+                <button class="btn-danger" id="logoutBtn">Log Out</button>
+            </section>
+
+            <div class="divider"></div>
+
+            <!-- Support -->
+            <section class="settings-section">
+                <button class="btn-coffee" id="coffeeBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+                        <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+                        <line x1="6" y1="2" x2="6" y2="4" />
+                        <line x1="10" y1="2" x2="10" y2="4" />
+                        <line x1="14" y1="2" x2="14" y2="4" />
+                    </svg>
+                    If you find this useful, buy me a coffee!
+                </button>
+
+                <!-- Disclaimer -->
+                <p class="disclaimer">
+                    <strong>Disclaimer:</strong> Unofficial tool not affiliated with Anthropic. Use at your own
+                    discretion.
+                </p>
+            </section>
+        </div>
+    </div>
+
+    <script src="settings.js"></script>
+</body>
+
+</html>

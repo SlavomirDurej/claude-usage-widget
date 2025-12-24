@@ -10,11 +10,14 @@ const store = new Store({
 let mainWindow = null;
 let loginWindow = null;
 let silentLoginWindow = null;
+let settingsWindow = null;
 let tray = null;
 
 // Window configuration
 const WIDGET_WIDTH = 480;
 const WIDGET_HEIGHT = 140;
+const SETTINGS_WIDTH = 500;
+const SETTINGS_HEIGHT = 680;
 
 function createMainWindow() {
   // Load saved position or use defaults
@@ -347,7 +350,7 @@ function createTray() {
       {
         label: 'Settings',
         click: () => {
-          // TODO: Open settings window
+          createSettingsWindow();
         }
       },
       {
@@ -377,6 +380,40 @@ function createTray() {
     });
   } catch (error) {
     console.error('Failed to create tray:', error);
+  }
+}
+
+function createSettingsWindow() {
+  if (settingsWindow) {
+    settingsWindow.focus();
+    return;
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: SETTINGS_WIDTH,
+    height: SETTINGS_HEIGHT,
+    title: 'Settings - Claude Usage Widget',
+    frame: false,
+    resizable: true,
+    minimizable: true,
+    maximizable: false,
+    icon: path.join(__dirname, 'assets/icon.ico'),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    }
+  });
+
+  settingsWindow.loadFile('src/renderer/settings.html');
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
+  });
+
+  // Development tools
+  if (process.env.NODE_ENV === 'development') {
+    settingsWindow.webContents.openDevTools({ mode: 'detach' });
   }
 }
 
@@ -416,6 +453,10 @@ ipcMain.on('open-login', () => {
   createLoginWindow();
 });
 
+ipcMain.on('open-settings', () => {
+  createSettingsWindow();
+});
+
 ipcMain.on('minimize-window', () => {
   if (mainWindow) mainWindow.hide();
 });
@@ -441,6 +482,31 @@ ipcMain.handle('set-window-position', (event, { x, y }) => {
 
 ipcMain.on('open-external', (event, url) => {
   shell.openExternal(url);
+});
+
+// Color preferences handlers
+const DEFAULT_COLOR_PREFERENCES = {
+  normal: { start: '#8b5cf6', end: '#a78bfa' },
+  warning: { start: '#f59e0b', end: '#fbbf24' },
+  danger: { start: '#ef4444', end: '#f87171' }
+};
+
+ipcMain.handle('get-color-preferences', () => {
+  const saved = store.get('colorPreferences');
+  return saved || DEFAULT_COLOR_PREFERENCES;
+});
+
+ipcMain.handle('set-color-preferences', (event, preferences) => {
+  store.set('colorPreferences', preferences);
+  return true;
+});
+
+ipcMain.handle('notify-color-change', (event, preferences) => {
+  // Notify main window to update colors
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('colors-changed', preferences);
+  }
+  return true;
 });
 
 ipcMain.handle('fetch-usage-data', async () => {

@@ -27,17 +27,17 @@ const elements = {
     weeklyTimer: document.getElementById('weeklyTimer'),
     weeklyTimeText: document.getElementById('weeklyTimeText'),
 
-    settingsBtn: document.getElementById('settingsBtn'),
-    settingsOverlay: document.getElementById('settingsOverlay'),
-    closeSettingsBtn: document.getElementById('closeSettingsBtn'),
-    logoutBtn: document.getElementById('logoutBtn'),
-    coffeeBtn: document.getElementById('coffeeBtn')
+    settingsBtn: document.getElementById('settingsBtn')
 };
 
 // Initialize
 async function init() {
     setupEventListeners();
     credentials = await window.electronAPI.getCredentials();
+
+    // Load and apply color preferences
+    const colorPrefs = await window.electronAPI.getColorPreferences();
+    applyColorPreferences(colorPrefs);
 
     if (credentials.sessionKey && credentials.organizationId) {
         showMainContent();
@@ -69,24 +69,9 @@ function setupEventListeners() {
         window.electronAPI.closeWindow(); // Exit application completely
     });
 
-    // Settings calls
+    // Settings button
     elements.settingsBtn.addEventListener('click', () => {
-        elements.settingsOverlay.style.display = 'flex';
-    });
-
-    elements.closeSettingsBtn.addEventListener('click', () => {
-        elements.settingsOverlay.style.display = 'none';
-    });
-
-    elements.logoutBtn.addEventListener('click', async () => {
-        await window.electronAPI.deleteCredentials();
-        elements.settingsOverlay.style.display = 'none';
-        showLoginRequired();
-        window.electronAPI.openLogin();
-    });
-
-    elements.coffeeBtn.addEventListener('click', () => {
-        window.electronAPI.openExternal('https://paypal.me/SlavomirDurej?country.x=GB&locale.x=en_GB');
+        window.electronAPI.openSettings();
     });
 
     // Listen for login success
@@ -122,6 +107,12 @@ function setupEventListeners() {
     window.electronAPI.onSilentLoginFailed(() => {
         console.log('Silent login failed, manual login required');
         showLoginRequired();
+    });
+
+    // Listen for color preference changes from settings window
+    window.electronAPI.onColorsChanged((preferences) => {
+        console.log('Colors changed, applying new preferences');
+        applyColorPreferences(preferences);
     });
 }
 
@@ -379,6 +370,23 @@ function showMainContent() {
 function showError(message) {
     // TODO: Implement error notification
     console.error(message);
+}
+
+// Color preference management
+function applyColorPreferences(prefs) {
+    const root = document.documentElement;
+
+    // Apply normal colors
+    root.style.setProperty('--color-normal-start', prefs.normal.start);
+    root.style.setProperty('--color-normal-end', prefs.normal.end);
+
+    // Apply warning colors
+    root.style.setProperty('--color-warning-start', prefs.warning.start);
+    root.style.setProperty('--color-warning-end', prefs.warning.end);
+
+    // Apply danger colors
+    root.style.setProperty('--color-danger-start', prefs.danger.start);
+    root.style.setProperty('--color-danger-end', prefs.danger.end);
 }
 
 // Auto-update management
