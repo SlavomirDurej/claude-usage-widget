@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Icon Generator</title>
+</head>
+<body>
+  <canvas id="iconCanvas" width="128" height="128"></canvas>
+  <script>
+    const { ipcRenderer } = require('electron');
+    const canvas = document.getElementById('iconCanvas');
+    const ctx = canvas.getContext('2d');
+
+    ipcRenderer.on('generate-icon', (event, { percentage, colors, showText }) => {
+      // Clear canvas
+      ctx.clearRect(0, 0, 128, 128);
+
+      const centerX = 64;
+      const centerY = 64;
+      const radius = 58;
+
+      // Determine colors based on percentage
+      let startColor, endColor;
+      if (percentage >= 90) {
+        startColor = colors.danger.start;
+        endColor = colors.danger.end;
+      } else if (percentage >= 75) {
+        startColor = colors.warning.start;
+        endColor = colors.warning.end;
+      } else {
+        startColor = colors.normal.start;
+        endColor = colors.normal.end;
+      }
+
+      // Draw background circle (dark gray)
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#3a3a3a';
+      ctx.fill();
+
+      // Draw progress pie (filled wedge)
+      const startAngle = -Math.PI / 2; // Start at top (12 o'clock)
+      const endAngle = startAngle + (percentage / 100) * Math.PI * 2;
+
+      if (percentage > 0) {
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+        ctx.closePath();
+
+        // Create gradient for progress pie
+        const gradient = ctx.createLinearGradient(0, 0, 128, 128);
+        gradient.addColorStop(0, startColor);
+        gradient.addColorStop(1, endColor);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      // Draw subtle border around the circle
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Draw percentage text (if enabled)
+      if (showText) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 32px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+
+        const text = Math.round(percentage).toString() + '%';
+        ctx.fillText(text, centerX, centerY);
+      }
+
+      // Send back as data URL
+      ipcRenderer.send('icon-generated', canvas.toDataURL());
+    });
+  </script>
+</body>
+</html>

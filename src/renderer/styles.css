@@ -1,3 +1,17 @@
+:root {
+    /* Customizable color scheme - normal state */
+    --color-normal-start: #8b5cf6;
+    --color-normal-end: #a78bfa;
+
+    /* Warning state (>=75% usage) */
+    --color-warning-start: #f59e0b;
+    --color-warning-end: #fbbf24;
+
+    /* Danger state (>=90% usage) */
+    --color-danger-start: #ef4444;
+    --color-danger-end: #f87171;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -339,7 +353,7 @@ body {
 
 .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%);
+    background: linear-gradient(90deg, var(--color-normal-start) 0%, var(--color-normal-end) 100%);
     border-radius: 3px;
     transition: width 0.6s ease;
     position: relative;
@@ -349,8 +363,8 @@ body {
 /* Shimmer removed */
 
 .progress-fill.weekly {
-    background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+    background: linear-gradient(90deg, var(--color-normal-start) 0%, var(--color-normal-end) 100%);
+    box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
 }
 
 
@@ -378,13 +392,13 @@ body {
 
 .timer-progress {
     fill: none;
-    stroke: #8b5cf6;
+    stroke: var(--color-normal-start);
     stroke-width: 4;
     transition: stroke-dashoffset 0.6s ease;
 }
 
 .timer-progress.weekly {
-    stroke: #3b82f6;
+    stroke: var(--color-normal-start);
 }
 
 .timer-text {
@@ -545,31 +559,31 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-    background: transparent;
+    background: rgba(0, 0, 0, 0.2);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.15);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.25);
 }
 
 /* Warning states */
 .progress-fill.warning {
-    background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
+    background: linear-gradient(90deg, var(--color-warning-start) 0%, var(--color-warning-end) 100%);
 }
 
 .progress-fill.danger {
-    background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
+    background: linear-gradient(90deg, var(--color-danger-start) 0%, var(--color-danger-end) 100%);
 }
 
 .timer-progress.warning {
-    stroke: #f59e0b;
+    stroke: var(--color-warning-start);
 }
 
 .timer-progress.danger {
-    stroke: #ef4444;
+    stroke: var(--color-danger-start);
 }

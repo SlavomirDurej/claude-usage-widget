@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Claude Usage Widget</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="settings-styles.css">
+</head>
+
+<body>
+    <div id="settings-app">
+        <!-- Title Bar -->
+        <div class="title-bar" id="titleBar">
+            <div class="title">
+                <img src="../../assets/logo.png" alt="Logo" class="app-logo">
+                <span>Settings</span>
+            </div>
+            <div class="controls">
+                <button class="control-btn minimize-btn" id="minimizeBtn" title="Minimize">−</button>
+                <button class="control-btn close-btn" id="closeBtn" title="Close">×</button>
+            </div>
+        </div>
+
+        <div class="settings-container">
+
+            <!-- Main Window Section -->
+            <section class="settings-section">
+                <h2>Main Window</h2>
+
+                <!-- Collapsible Color Customization -->
+                <div class="collapsible-section">
+                    <button class="collapsible-header" id="mainWindowColorsHeader">
+                        <span>Colors</span>
+                        <svg class="chevron" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <div class="collapsible-content" id="mainWindowColorsContent">
+                        <!-- Static Color Toggle -->
+                        <label class="toggle-switch" style="margin-bottom: 16px;">
+                            <input type="checkbox" id="mainWindowStaticColor">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label">Use Static Color</span>
+                        </label>
+
+                        <!-- Static Color Picker (shown when toggle is ON) -->
+                        <div id="mainWindowStaticColorPicker" style="display: none; margin-bottom: 16px;">
+                            <div class="color-item" style="width: 100%;">
+                                <label>Progress Bar Color</label>
+                                <input type="color" id="mainWindowStaticColorValue" value="#8b5cf6">
+                            </div>
+                        </div>
+
+                        <!-- Gradient Color Pickers (shown when toggle is OFF) -->
+                        <div class="color-grid-2col" id="mainWindowGradientPickers">
+                            <div class="color-item">
+                                <label>Normal Start</label>
+                                <input type="color" id="colorNormalStart" value="#8b5cf6">
+                            </div>
+
+                            <div class="color-item">
+                                <label>Normal End</label>
+                                <input type="color" id="colorNormalEnd" value="#a78bfa">
+                            </div>
+
+                            <div class="color-item">
+                                <label>Warning Start</label>
+                                <input type="color" id="colorWarningStart" value="#f59e0b">
+                            </div>
+
+                            <div class="color-item">
+                                <label>Warning End</label>
+                                <input type="color" id="colorWarningEnd" value="#fbbf24">
+                            </div>
+
+                            <div class="color-item">
+                                <label>Danger Start</label>
+                                <input type="color" id="colorDangerStart" value="#ef4444">
+                            </div>
+
+                            <div class="color-item">
+                                <label>Danger End</label>
+                                <input type="color" id="colorDangerEnd" value="#f87171">
+                            </div>
+                        </div>
+
+                        <button class="btn-secondary" id="resetColorsBtn">Reset to Defaults</button>
+                    </div>
+                </div>
+
+                <!-- Theme Settings -->
+                <div class="collapsible-section">
+                    <button class="collapsible-header" id="mainWindowThemeHeader">
+                        <span>Theme</span>
+                        <svg class="chevron" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <div class="collapsible-content" id="mainWindowThemeContent">
+                        <p class="setting-description">Customize the widget's overall appearance</p>
+
+                        <div class="theme-grid">
+                            <!-- Background Gradient -->
+                            <div class="theme-item">
+                                <label>Background Start</label>
+                                <input type="color" id="backgroundColorStart" value="#1e1e2e">
+                            </div>
+
+                            <div class="theme-item">
+                                <label>Background End</label>
+                                <input type="color" id="backgroundColorEnd" value="#2a2a3e">
+                            </div>
+
+                            <!-- Text Colors -->
+                            <div class="theme-item">
+                                <label>Primary Text</label>
+                                <input type="color" id="textColorPrimary" value="#e0e0e0">
+                            </div>
+
+                            <div class="theme-item">
+                                <label>Secondary Text</label>
+                                <input type="color" id="textColorSecondary" value="#a0a0a0">
+                            </div>
+
+                            <!-- UI Elements -->
+                            <div class="theme-item">
+                                <label>Title Bar Background</label>
+                                <input type="color" id="titleBarBackground" value="#000000">
+                                <input type="range" id="titleBarOpacity" min="0" max="100" value="30" style="width: 100%; margin-top: 4px;">
+                                <div style="text-align: center; font-size: 10px; color: #9ca3af; margin-top: 2px;">
+                                    Opacity: <span id="titleBarOpacityValue">30</span>%
+                                </div>
+                            </div>
+
+                            <div class="theme-item">
+                                <label>Border Color</label>
+                                <input type="color" id="borderColor" value="#ffffff">
+                                <input type="range" id="borderOpacity" min="0" max="100" value="10" style="width: 100%; margin-top: 4px;">
+                                <div style="text-align: center; font-size: 10px; color: #9ca3af; margin-top: 2px;">
+                                    Opacity: <span id="borderOpacityValue">10</span>%
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="btn-secondary" id="resetThemeBtn">Reset Theme</button>
+                    </div>
+                </div>
+            </section>
+
+            <div class="divider"></div>
+
+            <!-- Tray Icon Settings -->
+            <section class="settings-section">
+                <h2>Tray Icon</h2>
+
+                <!-- Display Mode -->
+                <div class="setting-group">
+                    <h3>Display Mode</h3>
+                    <p class="setting-description">Choose which usage metric to display in the system tray</p>
+
+                    <div class="radio-group">
+                        <label class="radio-item">
+                            <input type="radio" name="trayDisplay" value="session" id="trayDisplaySession" checked>
+                            <div class="radio-content">
+                                <span class="radio-label">Session Usage</span>
+                                <span class="radio-sublabel">5-hour limit</span>
+                            </div>
+                        </label>
+
+                        <label class="radio-item">
+                            <input type="radio" name="trayDisplay" value="weekly" id="trayDisplayWeekly">
+                            <div class="radio-content">
+                                <span class="radio-label">Weekly Usage</span>
+                                <span class="radio-sublabel">7-day limit</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Update Interval -->
+                <div class="setting-group">
+                    <h3>Update Interval</h3>
+                    <p class="setting-description">How often to refresh the tray icon (in seconds)</p>
+
+                    <div class="slider-container">
+                        <input type="range" id="trayUpdateInterval" min="10" max="300" value="30" step="10">
+                        <div class="slider-value">
+                            <span id="trayUpdateValue">30</span> seconds
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Show Text Toggle -->
+                <div class="setting-group">
+                    <h3>Show Percentage Text</h3>
+                    <p class="setting-description">Display percentage number on the tray icon</p>
+
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="trayShowText" checked>
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-label" id="trayShowTextLabel">Enabled</span>
+                    </label>
+                </div>
+
+                <!-- Tray Icon Colors -->
+                <div class="setting-group">
+                    <div class="collapsible-section">
+                        <button class="collapsible-header" id="trayColorsHeader">
+                            <span>Colors</span>
+                            <svg class="chevron" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                        <div class="collapsible-content" id="trayColorsContent">
+                            <p class="setting-description">Customize colors for the tray icon progress indicator</p>
+
+                            <!-- Static Color Toggle -->
+                            <label class="toggle-switch" style="margin-bottom: 16px;">
+                                <input type="checkbox" id="trayStaticColor">
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Use Static Color</span>
+                            </label>
+
+                            <!-- Static Color Picker (shown when toggle is ON) -->
+                            <div id="trayStaticColorPicker" style="display: none; margin-bottom: 16px;">
+                                <div class="color-item" style="width: 100%;">
+                                    <label>Tray Icon Color</label>
+                                    <input type="color" id="trayStaticColorValue" value="#8b5cf6">
+                                </div>
+                            </div>
+
+                            <!-- Gradient Color Pickers (shown when toggle is OFF) -->
+                            <div class="color-grid-2col" id="trayGradientPickers">
+                                <div class="color-item">
+                                    <label>Normal Start</label>
+                                    <input type="color" id="trayColorNormalStart" value="#8b5cf6">
+                                </div>
+
+                                <div class="color-item">
+                                    <label>Normal End</label>
+                                    <input type="color" id="trayColorNormalEnd" value="#a78bfa">
+                                </div>
+
+                                <div class="color-item">
+                                    <label>Warning Start</label>
+                                    <input type="color" id="trayColorWarningStart" value="#f59e0b">
+                                </div>
+
+                                <div class="color-item">
+                                    <label>Warning End</label>
+                                    <input type="color" id="trayColorWarningEnd" value="#fbbf24">
+                                </div>
+
+                                <div class="color-item">
+                                    <label>Danger Start</label>
+                                    <input type="color" id="trayColorDangerStart" value="#ef4444">
+                                </div>
+
+                                <div class="color-item">
+                                    <label>Danger End</label>
+                                    <input type="color" id="trayColorDangerEnd" value="#f87171">
+                                </div>
+                            </div>
+
+                            <button class="btn-secondary" id="resetTrayColorsBtn">Reset Tray Colors</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="divider"></div>
+
+            <!-- Account Actions -->
+            <section class="settings-section">
+                <h2>Account</h2>
+                <button class="btn-danger" id="logoutBtn">Log Out</button>
+            </section>
+
+            <div class="divider"></div>
+
+            <!-- Support -->
+            <section class="settings-section">
+                <button class="btn-coffee" id="coffeeBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+                        <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+                        <line x1="6" y1="2" x2="6" y2="4" />
+                        <line x1="10" y1="2" x2="10" y2="4" />
+                        <line x1="14" y1="2" x2="14" y2="4" />
+                    </svg>
+                    If you find this useful, buy me a coffee!
+                </button>
+
+                <!-- Disclaimer -->
+                <p class="disclaimer">
+                    <strong>Disclaimer:</strong> Unofficial tool not affiliated with Anthropic. Use at your own
+                    discretion.
+                </p>
+            </section>
+        </div>
+    </div>
+
+    <script src="settings.js"></script>
+</body>
+
+</html>

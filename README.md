@@ -11,6 +11,8 @@ A beautiful, standalone Windows desktop widget that displays your Claude.ai usag
 - ⏱️ **Countdown Timers** - Circular timers showing time until reset
 - 🔄 **Auto-refresh** - Updates every 5 minutes automatically
 - 🎨 **Modern UI** - Sleek, draggable widget with dark theme
+- 🎨 **Customizable Colors** - Personalize progress bar colors for each usage level
+- ⚙️ **Settings Panel** - Easy-to-use settings window for customization
 - 🔒 **Secure** - Encrypted credential storage
 - 📍 **Always on Top** - Stays visible across all workspaces
 - 💾 **System Tray** - Minimizes to tray for easy access
@@ -70,7 +72,7 @@ Right-click the tray icon for:
 - Show/Hide widget
 - Refresh usage data
 - Re-login (if session expires)
-- Settings (coming soon)
+- Settings - Open customization panel
 - Exit application
 
 ## Understanding the Display
@@ -88,7 +90,22 @@ Right-click the tray icon for:
 - **Timer** - Time remaining until weekly reset (Wednesdays 7:00 AM)
 - **Same color coding** as session usage
 
-## Configuration
+## Customization
+
+### Color Preferences
+
+Customize the progress bar colors to match your preferences:
+
+1. Right-click the system tray icon
+2. Select "Settings"
+3. Use the color pickers to customize each usage level:
+   - **Normal** (0-74% usage) - Default: Purple gradient
+   - **Warning** (75-89% usage) - Default: Orange gradient
+   - **Danger** (90-100% usage) - Default: Red gradient
+4. Changes apply instantly to the main widget
+5. Click "Reset to Defaults" to restore original colors
+
+![Settings Window - Color Customization](assets/settings-screenshot.png)
 
 ### Auto-start on Windows Boot
 
@@ -156,10 +173,10 @@ https://claude.ai/api/organizations/{org_id}/usage
 
 - [ ] macOS support
 - [ ] Linux support
-- [ ] Custom themes
+- [x] Custom color themes
 - [ ] Notification alerts at usage thresholds
 - [x] Remember window position
-- [ ] Settings panel
+- [x] Settings panel
 - [ ] Usage history graphs
 - [ ] Multiple account support
 - [ ] Keyboard shortcuts

@@ -27,17 +27,21 @@ const elements = {
     weeklyTimer: document.getElementById('weeklyTimer'),
     weeklyTimeText: document.getElementById('weeklyTimeText'),
 
-    settingsBtn: document.getElementById('settingsBtn'),
-    settingsOverlay: document.getElementById('settingsOverlay'),
-    closeSettingsBtn: document.getElementById('closeSettingsBtn'),
-    logoutBtn: document.getElementById('logoutBtn'),
-    coffeeBtn: document.getElementById('coffeeBtn')
+    settingsBtn: document.getElementById('settingsBtn')
 };
 
 // Initialize
 async function init() {
     setupEventListeners();
     credentials = await window.electronAPI.getCredentials();
+
+    // Load and apply color preferences
+    const colorPrefs = await window.electronAPI.getColorPreferences();
+    applyColorPreferences(colorPrefs);
+
+    // Load and apply theme settings
+    const themeSettings = await window.electronAPI.getThemeSettings();
+    applyThemePreferences(themeSettings);
 
     if (credentials.sessionKey && credentials.organizationId) {
         showMainContent();
@@ -69,24 +73,9 @@ function setupEventListeners() {
         window.electronAPI.closeWindow(); // Exit application completely
     });
 
-    // Settings calls
+    // Settings button
     elements.settingsBtn.addEventListener('click', () => {
-        elements.settingsOverlay.style.display = 'flex';
-    });
-
-    elements.closeSettingsBtn.addEventListener('click', () => {
-        elements.settingsOverlay.style.display = 'none';
-    });
-
-    elements.logoutBtn.addEventListener('click', async () => {
-        await window.electronAPI.deleteCredentials();
-        elements.settingsOverlay.style.display = 'none';
-        showLoginRequired();
-        window.electronAPI.openLogin();
-    });
-
-    elements.coffeeBtn.addEventListener('click', () => {
-        window.electronAPI.openExternal('https://paypal.me/SlavomirDurej?country.x=GB&locale.x=en_GB');
+        window.electronAPI.openSettings();
     });
 
     // Listen for login success
@@ -122,6 +111,18 @@ function setupEventListeners() {
     window.electronAPI.onSilentLoginFailed(() => {
         console.log('Silent login failed, manual login required');
         showLoginRequired();
+    });
+
+    // Listen for color preference changes from settings window
+    window.electronAPI.onColorsChanged((preferences) => {
+        console.log('Colors changed, applying new preferences');
+        applyColorPreferences(preferences);
+    });
+
+    // Listen for theme changes from settings window
+    window.electronAPI.onThemeChanged((theme) => {
+        console.log('Theme changed, applying new theme');
+        applyThemePreferences(theme);
     });
 }
 
@@ -167,6 +168,11 @@ function hasNoUsage(data) {
 // Update UI with usage data
 function updateUI(data) {
     latestUsageData = data;
+
+    // Send usage data to main process for tray icon
+    if (window.electronAPI && window.electronAPI.sendUsageToMain) {
+        window.electronAPI.sendUsageToMain(data);
+    }
 
     // Check if there's no usage data
     if (hasNoUsage(data)) {
@@ -379,6 +385,53 @@ function showMainContent() {
 function showError(message) {
     // TODO: Implement error notification
     console.error(message);
+}
+
+// Color preference management
+function applyColorPreferences(prefs) {
+    const root = document.documentElement;
+
+    // Apply normal colors
+    root.style.setProperty('--color-normal-start', prefs.normal.start);
+    root.style.setProperty('--color-normal-end', prefs.normal.end);
+
+    // Apply warning colors
+    root.style.setProperty('--color-warning-start', prefs.warning.start);
+    root.style.setProperty('--color-warning-end', prefs.warning.end);
+
+    // Apply danger colors
+    root.style.setProperty('--color-danger-start', prefs.danger.start);
+    root.style.setProperty('--color-danger-end', prefs.danger.end);
+}
+
+// Theme preference management
+function applyThemePreferences(theme) {
+    const root = document.documentElement;
+    const widgetContainer = document.querySelector('.widget-container');
+    const titleBar = document.querySelector('.title-bar');
+
+    // Apply background gradient
+    if (widgetContainer) {
+        widgetContainer.style.background = `linear-gradient(135deg, ${theme.backgroundStart} 0%, ${theme.backgroundEnd} 100%)`;
+    }
+
+    // Apply text colors
+    root.style.setProperty('--text-primary', theme.textPrimary);
+    root.style.setProperty('--text-secondary', theme.textSecondary);
+
+    // Apply title bar background
+    if (titleBar) {
+        const opacity = theme.titleBarOpacity / 100;
+        const bgColor = theme.titleBarBg;
+        titleBar.style.background = `rgba(${parseInt(bgColor.slice(1, 3), 16)}, ${parseInt(bgColor.slice(3, 5), 16)}, ${parseInt(bgColor.slice(5, 7), 16)}, ${opacity})`;
+    }
+
+    // Apply border color
+    if (widgetContainer) {
+        const borderOpacity = theme.borderOpacity / 100;
+        const borderColor = theme.borderColor;
+        widgetContainer.style.borderColor = `rgba(${parseInt(borderColor.slice(1, 3), 16)}, ${parseInt(borderColor.slice(3, 5), 16)}, ${parseInt(borderColor.slice(5, 7), 16)}, ${borderOpacity})`;
+    }
 }
 
 // Auto-update management
