@@ -36,5 +36,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // API
   fetchUsageData: () => ipcRenderer.invoke('fetch-usage-data'),
-  openExternal: (url) => ipcRenderer.send('open-external', url)
+  openExternal: (url) => ipcRenderer.send('open-external', url),
+
+  // Compact mode
+  getCompactMode: () => ipcRenderer.invoke('get-compact-mode'),
+  setCompactMode: (isCompact) => ipcRenderer.invoke('set-compact-mode', isCompact),
+  expandForSettings: (expand) => ipcRenderer.invoke('expand-for-settings', expand),
+
+  // Refresh interval and update timer settings
+  getRefreshInterval: () => ipcRenderer.invoke('get-refresh-interval'),
+  setRefreshInterval: (interval) => ipcRenderer.invoke('set-refresh-interval', interval),
+  getShowUpdateTimer: () => ipcRenderer.invoke('get-show-update-timer'),
+  setShowUpdateTimer: (show) => ipcRenderer.invoke('set-show-update-timer', show)
 });

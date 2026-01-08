@@ -2,8 +2,11 @@
 let credentials = null;
 let updateInterval = null;
 let countdownInterval = null;
+let updateTimerInterval = null;
 let latestUsageData = null;
-const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+let refreshIntervalMs = 5 * 60 * 1000; // Default 5 minutes
+let showUpdateTimer = false;
+let nextUpdateTime = null;
 
 // DOM elements
 const elements = {
@@ -31,12 +34,42 @@ const elements = {
     settingsOverlay: document.getElementById('settingsOverlay'),
     closeSettingsBtn: document.getElementById('closeSettingsBtn'),
     logoutBtn: document.getElementById('logoutBtn'),
-    coffeeBtn: document.getElementById('coffeeBtn')
+    coffeeBtn: document.getElementById('coffeeBtn'),
+    compactModeToggle: document.getElementById('compactModeToggle'),
+
+    // Compact mode controls
+    compactSettingsBtn: document.getElementById('compactSettingsBtn'),
+    compactMinimizeBtn: document.getElementById('compactMinimizeBtn'),
+    compactCloseBtn: document.getElementById('compactCloseBtn'),
+
+    // New settings
+    refreshIntervalSelect: document.getElementById('refreshIntervalSelect'),
+    showUpdateTimerToggle: document.getElementById('showUpdateTimerToggle'),
+
+    // Update timer displays
+    updateTimerNormal: document.getElementById('updateTimerNormal'),
+    updateTimerText: document.getElementById('updateTimerText'),
+    updateTimerCompact: document.getElementById('updateTimerCompact')
 };
 
 // Initialize
 async function init() {
     setupEventListeners();
+
+    // Load and apply compact mode setting
+    const isCompactMode = await window.electronAPI.getCompactMode();
+    applyCompactMode(isCompactMode);
+    elements.compactModeToggle.checked = isCompactMode;
+
+    // Load refresh interval setting
+    refreshIntervalMs = await window.electronAPI.getRefreshInterval();
+    elements.refreshIntervalSelect.value = refreshIntervalMs.toString();
+
+    // Load show update timer setting
+    showUpdateTimer = await window.electronAPI.getShowUpdateTimer();
+    elements.showUpdateTimerToggle.checked = showUpdateTimer;
+    applyUpdateTimerVisibility();
+
     credentials = await window.electronAPI.getCredentials();
 
     if (credentials.sessionKey && credentials.organizationId) {
@@ -45,6 +78,69 @@ async function init() {
         startAutoUpdate();
     } else {
         showLoginRequired();
+    }
+}
+
+// Apply compact mode styling
+function applyCompactMode(isCompact) {
+    if (isCompact) {
+        document.body.classList.add('compact-mode');
+    } else {
+        document.body.classList.remove('compact-mode');
+    }
+}
+
+// Settings management (handles window expansion)
+async function openSettings() {
+    console.log('[Renderer] Opening settings...');
+    await window.electronAPI.expandForSettings(true);
+    elements.settingsOverlay.style.display = 'flex';
+}
+
+async function closeSettings() {
+    console.log('[Renderer] Closing settings...');
+    elements.settingsOverlay.style.display = 'none';
+    await window.electronAPI.expandForSettings(false);
+    console.log('[Renderer] Settings closed, window should be resized');
+}
+
+// Update timer visibility
+function applyUpdateTimerVisibility() {
+    if (showUpdateTimer) {
+        elements.updateTimerNormal.style.display = 'flex';
+        elements.updateTimerCompact.style.display = 'inline';
+    } else {
+        elements.updateTimerNormal.style.display = 'none';
+        elements.updateTimerCompact.style.display = 'none';
+    }
+}
+
+// Update timer countdown
+function updateTimerCountdown() {
+    if (!showUpdateTimer || !nextUpdateTime) return;
+
+    const now = Date.now();
+    const remaining = Math.max(0, nextUpdateTime - now);
+    const seconds = Math.floor(remaining / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+
+    const timeStr = `${minutes}:${secs.toString().padStart(2, '0')}`;
+    elements.updateTimerText.textContent = `Next update in ${timeStr}`;
+    elements.updateTimerCompact.textContent = `⟳ ${timeStr}`;
+}
+
+function startUpdateTimerCountdown() {
+    if (updateTimerInterval) clearInterval(updateTimerInterval);
+    nextUpdateTime = Date.now() + refreshIntervalMs;
+    updateTimerCountdown();
+    updateTimerInterval = setInterval(updateTimerCountdown, 1000);
+}
+
+function stopUpdateTimerCountdown() {
+    if (updateTimerInterval) {
+        clearInterval(updateTimerInterval);
+        updateTimerInterval = null;
     }
 }
 
@@ -70,23 +166,60 @@ function setupEventListeners() {
     });
 
     // Settings calls
-    elements.settingsBtn.addEventListener('click', () => {
-        elements.settingsOverlay.style.display = 'flex';
+    elements.settingsBtn.addEventListener('click', async () => {
+        await openSettings();
     });
 
-    elements.closeSettingsBtn.addEventListener('click', () => {
-        elements.settingsOverlay.style.display = 'none';
+    elements.closeSettingsBtn.addEventListener('click', async () => {
+        await closeSettings();
     });
 
     elements.logoutBtn.addEventListener('click', async () => {
         await window.electronAPI.deleteCredentials();
-        elements.settingsOverlay.style.display = 'none';
+        await closeSettings();
         showLoginRequired();
         window.electronAPI.openLogin();
     });
 
     elements.coffeeBtn.addEventListener('click', () => {
         window.electronAPI.openExternal('https://paypal.me/SlavomirDurej?country.x=GB&locale.x=en_GB');
+    });
+
+    // Compact mode toggle
+    elements.compactModeToggle.addEventListener('change', async (e) => {
+        const isCompact = e.target.checked;
+        await window.electronAPI.setCompactMode(isCompact);
+        applyCompactMode(isCompact);
+    });
+
+    // Refresh interval setting
+    elements.refreshIntervalSelect.addEventListener('change', async (e) => {
+        refreshIntervalMs = parseInt(e.target.value, 10);
+        await window.electronAPI.setRefreshInterval(refreshIntervalMs);
+        // Restart auto-update with new interval
+        if (updateInterval) {
+            startAutoUpdate();
+        }
+    });
+
+    // Show update timer toggle
+    elements.showUpdateTimerToggle.addEventListener('change', async (e) => {
+        showUpdateTimer = e.target.checked;
+        await window.electronAPI.setShowUpdateTimer(showUpdateTimer);
+        applyUpdateTimerVisibility();
+    });
+
+    // Compact mode control buttons
+    elements.compactSettingsBtn.addEventListener('click', async () => {
+        await openSettings();
+    });
+
+    elements.compactMinimizeBtn.addEventListener('click', () => {
+        window.electronAPI.minimizeWindow();
+    });
+
+    elements.compactCloseBtn.addEventListener('click', () => {
+        window.electronAPI.closeWindow();
     });
 
     // Listen for login success
@@ -384,9 +517,11 @@ function showError(message) {
 // Auto-update management
 function startAutoUpdate() {
     stopAutoUpdate();
+    startUpdateTimerCountdown();
     updateInterval = setInterval(() => {
         fetchUsageData();
-    }, UPDATE_INTERVAL);
+        startUpdateTimerCountdown(); // Reset countdown after each fetch
+    }, refreshIntervalMs);
 }
 
 function stopAutoUpdate() {
@@ -394,6 +529,7 @@ function stopAutoUpdate() {
         clearInterval(updateInterval);
         updateInterval = null;
     }
+    stopUpdateTimerCountdown();
 }
 
 // Add spinning animation for refresh button

@@ -573,3 +573,312 @@ body {
 .timer-progress.danger {
     stroke: #ef4444;
 }
+
+/* Settings Toggle Switch */
+.settings-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.toggle-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: #e0e0e0;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.toggle-description {
+    font-size: 10px;
+    color: #808080;
+    font-weight: 400;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 22px;
+    transition: 0.3s;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background: #a0a0a0;
+    border-radius: 50%;
+    transition: 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(18px);
+    background: #ffffff;
+}
+
+/* Settings Select Dropdown */
+.settings-select {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    color: #e0e0e0;
+    padding: 6px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    outline: none;
+    min-width: 100px;
+}
+
+.settings-select:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.settings-select:focus {
+    border-color: #8b5cf6;
+}
+
+.settings-select option {
+    background: #2a2a3e;
+    color: #e0e0e0;
+}
+
+/* Update Timer - Normal Mode */
+.update-timer-normal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 0 0 0;
+    margin-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.update-timer-icon {
+    color: #8b5cf6;
+    font-size: 12px;
+}
+
+.update-timer-text {
+    color: #808080;
+    font-size: 10px;
+}
+
+/* Compact Mode Styles */
+body.compact-mode {
+    -webkit-app-region: drag;
+}
+
+body.compact-mode .widget-container {
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+body.compact-mode .title-bar {
+    display: none;
+}
+
+body.compact-mode .content {
+    padding: 24px 12px 8px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+}
+
+body.compact-mode .usage-section {
+    grid-template-columns: 85px 1fr 36px 58px;
+    gap: 8px;
+    height: 22px;
+    padding: 0;
+    margin-bottom: 0;
+}
+
+body.compact-mode .usage-section:first-of-type {
+    margin-bottom: 4px;
+}
+
+body.compact-mode .usage-label {
+    font-size: 9px;
+}
+
+body.compact-mode .usage-percentage {
+    font-size: 11px;
+}
+
+body.compact-mode .timer-text {
+    font-size: 10px;
+}
+
+body.compact-mode .mini-timer {
+    width: 18px;
+    height: 18px;
+}
+
+body.compact-mode .timer-container {
+    gap: 4px;
+    padding-left: 0;
+}
+
+body.compact-mode .progress-bar {
+    height: 5px;
+    min-width: 60px;
+}
+
+/* Compact mode control buttons */
+body.compact-mode .compact-controls {
+    display: flex;
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    justify-content: flex-end;
+    align-items: center;
+    z-index: 10;
+}
+
+body.compact-mode .update-timer-compact {
+    margin-right: auto;
+}
+
+body.compact-mode .compact-controls-buttons {
+    display: flex;
+    gap: 2px;
+}
+
+body.compact-mode .compact-controls .control-btn {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0;
+    line-height: 1;
+}
+
+body.compact-mode .compact-controls .settings-btn {
+    font-size: 9px;
+}
+
+body.compact-mode .compact-controls .control-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+body.compact-mode .compact-controls .close-btn:hover {
+    background: #e74c3c;
+}
+
+/* Update timer in compact mode */
+body.compact-mode .update-timer-compact {
+    color: #808080;
+    font-size: 9px;
+    padding-left: 4px;
+}
+
+/* Hide normal mode timer in compact mode */
+body.compact-mode .update-timer-normal {
+    display: none !important;
+}
+
+/* Hide compact controls in normal mode */
+.compact-controls {
+    display: none;
+}
+
+/* Make buttons and interactive elements non-draggable in compact mode */
+body.compact-mode .control-btn,
+body.compact-mode .compact-controls,
+body.compact-mode .compact-controls-buttons,
+body.compact-mode .login-btn,
+body.compact-mode .logout-btn,
+body.compact-mode .coffee-btn,
+body.compact-mode .toggle-switch,
+body.compact-mode .settings-overlay,
+body.compact-mode .settings-select,
+body.compact-mode button,
+body.compact-mode input,
+body.compact-mode select {
+    -webkit-app-region: no-drag;
+}
+
+/* Login and other states in compact mode */
+body.compact-mode .login-container,
+body.compact-mode .no-usage-container,
+body.compact-mode .auto-login-container {
+    padding: 20px 8px 0 8px;
+}
+
+body.compact-mode .login-content,
+body.compact-mode .no-usage-content,
+body.compact-mode .auto-login-content {
+    gap: 8px;
+}
+
+body.compact-mode .login-content svg,
+body.compact-mode .no-usage-content svg {
+    width: 18px;
+    height: 18px;
+}
+
+body.compact-mode .login-text-group,
+body.compact-mode .no-usage-text-group,
+body.compact-mode .auto-login-text-group {
+    padding-left: 4px;
+}
+
+body.compact-mode .login-content h3,
+body.compact-mode .no-usage-content h3,
+body.compact-mode .auto-login-content h3 {
+    font-size: 10px;
+}
+
+body.compact-mode .login-content p,
+body.compact-mode .no-usage-content p,
+body.compact-mode .auto-login-content p {
+    font-size: 9px;
+}
+
+body.compact-mode .login-btn {
+    padding: 4px 10px;
+    font-size: 10px;
+}
+
+body.compact-mode .auto-login-content .spinner {
+    width: 18px;
+    height: 18px;
+}
+
+/* Settings overlay in compact mode - needs to expand window temporarily */
+body.compact-mode .settings-overlay {
+    -webkit-app-region: no-drag;
+}

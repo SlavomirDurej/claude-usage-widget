@@ -15,13 +15,29 @@ let tray = null;
 // Window configuration
 const WIDGET_WIDTH = 480;
 const WIDGET_HEIGHT = 140;
+const WIDGET_HEIGHT_WITH_TIMER = 160;
+const COMPACT_WIDTH = 360;
+const COMPACT_HEIGHT = 76;
+const SETTINGS_WIDTH = 480;
+const SETTINGS_HEIGHT = 360;
 
 function createMainWindow() {
-  // Load saved position or use defaults
+  // Load saved position and compact mode setting
   const savedPosition = store.get('windowPosition');
+  const isCompactMode = store.get('compactMode', false);
+  const showUpdateTimer = store.get('showUpdateTimer', false);
+
+  // Calculate height based on mode and timer visibility
+  let windowHeight;
+  if (isCompactMode) {
+    windowHeight = COMPACT_HEIGHT;
+  } else {
+    windowHeight = showUpdateTimer ? WIDGET_HEIGHT_WITH_TIMER : WIDGET_HEIGHT;
+  }
+
   const windowOptions = {
-    width: WIDGET_WIDTH,
-    height: WIDGET_HEIGHT,
+    width: isCompactMode ? COMPACT_WIDTH : WIDGET_WIDTH,
+    height: windowHeight,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -441,6 +457,68 @@ ipcMain.handle('set-window-position', (event, { x, y }) => {
 
 ipcMain.on('open-external', (event, url) => {
   shell.openExternal(url);
+});
+
+// Compact mode handlers
+ipcMain.handle('get-compact-mode', () => {
+  return store.get('compactMode', false);
+});
+
+ipcMain.handle('get-refresh-interval', () => {
+  return store.get('refreshInterval', 300000); // Default 5 minutes
+});
+
+ipcMain.handle('set-refresh-interval', (event, interval) => {
+  store.set('refreshInterval', interval);
+  return true;
+});
+
+ipcMain.handle('get-show-update-timer', () => {
+  return store.get('showUpdateTimer', false);
+});
+
+ipcMain.handle('set-show-update-timer', (event, show) => {
+  store.set('showUpdateTimer', show);
+  return true;
+});
+
+ipcMain.handle('set-compact-mode', (event, isCompact) => {
+  store.set('compactMode', isCompact);
+  return true;
+});
+
+// Temporarily expand window for settings
+ipcMain.handle('expand-for-settings', (event, expand) => {
+  if (!mainWindow) return false;
+
+  const bounds = mainWindow.getBounds();
+  const isCompactMode = store.get('compactMode', false);
+  const showUpdateTimer = store.get('showUpdateTimer', false);
+
+  // Temporarily allow resizing
+  mainWindow.setResizable(true);
+
+  if (expand) {
+    // Expand to settings size
+    mainWindow.setBounds({ x: bounds.x, y: bounds.y, width: SETTINGS_WIDTH, height: SETTINGS_HEIGHT });
+    console.log('[Main] Expanded for settings');
+  } else {
+    // Restore to appropriate size based on compact mode and timer settings
+    const targetWidth = isCompactMode ? COMPACT_WIDTH : WIDGET_WIDTH;
+    let targetHeight;
+    if (isCompactMode) {
+      targetHeight = COMPACT_HEIGHT;
+    } else {
+      targetHeight = showUpdateTimer ? WIDGET_HEIGHT_WITH_TIMER : WIDGET_HEIGHT;
+    }
+    mainWindow.setBounds({ x: bounds.x, y: bounds.y, width: targetWidth, height: targetHeight });
+    console.log('[Main] Restored from settings, compact:', isCompactMode, 'size:', targetWidth, 'x', targetHeight);
+  }
+
+  // Disable resizing again
+  mainWindow.setResizable(false);
+
+  return true;
 });
 
 ipcMain.handle('fetch-usage-data', async () => {

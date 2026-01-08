@@ -45,6 +45,9 @@
       "**/*",
       "!**/*.ts",
       "!*.md"
+    ],
+    "asarUnpack": [
+      "node_modules/conf/**"
     ]
   }
 }

@@ -14,6 +14,16 @@
 <body>
     <div id="app">
         <div class="widget-container" id="widgetContainer">
+            <!-- Compact Mode Controls (visible only in compact mode) -->
+            <div class="compact-controls">
+                <span class="update-timer-compact" id="updateTimerCompact" style="display: none;">⟳ 5:00</span>
+                <div class="compact-controls-buttons">
+                    <button class="control-btn settings-btn" id="compactSettingsBtn" title="Settings">⚙️</button>
+                    <button class="control-btn minimize-btn" id="compactMinimizeBtn" title="Minimize">−</button>
+                    <button class="control-btn close-btn" id="compactCloseBtn" title="Exit">×</button>
+                </div>
+            </div>
+
             <!-- Title Bar -->
             <div class="title-bar" id="titleBar">
                 <div class="title">
@@ -116,8 +126,11 @@
                     </div>
                 </div>
 
-                <!-- Hidden Footer element (removed) -->
-                <span id="lastUpdate" style="display: none;"></span>
+                <!-- Update Timer (for normal mode) -->
+                <div class="update-timer-normal" id="updateTimerNormal" style="display: none;">
+                    <span class="update-timer-icon">⟳</span>
+                    <span class="update-timer-text" id="updateTimerText">Next update in 5:00</span>
+                </div>
             </div>
 
             <!-- Settings Overlay -->
@@ -140,6 +153,42 @@
                         </svg>
                         If you find this useful, buy me a coffee!
                     </button>
+
+                    <div class="settings-option">
+                        <label class="toggle-label" for="compactModeToggle">
+                            <span>Compact Mode</span>
+                            <span class="toggle-description">Minimal UI with smaller window</span>
+                        </label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="compactModeToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="settings-option">
+                        <label class="toggle-label" for="refreshIntervalSelect">
+                            <span>Refresh Interval</span>
+                            <span class="toggle-description">How often to update usage data</span>
+                        </label>
+                        <select id="refreshIntervalSelect" class="settings-select">
+                            <option value="60000">1 minute</option>
+                            <option value="180000">3 minutes</option>
+                            <option value="300000" selected>5 minutes</option>
+                            <option value="600000">10 minutes</option>
+                            <option value="900000">15 minutes</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-option">
+                        <label class="toggle-label" for="showUpdateTimerToggle">
+                            <span>Show Update Timer</span>
+                            <span class="toggle-description">Display countdown to next refresh</span>
+                        </label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="showUpdateTimerToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
 
                     <div class="settings-actions">
                         <button class="logout-btn" id="logoutBtn">Log Out</button>
