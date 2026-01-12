@@ -18,13 +18,14 @@
   "author": "Your Name",
   "license": "MIT",
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "electron": "^28.0.0",
-    "electron-builder": "^24.9.1",
-    "cross-env": "^7.0.3"
+    "electron-builder": "^24.9.1"
   },
   "dependencies": {
-    "electron-store": "^8.1.0",
-    "axios": "^1.6.2"
+    "axios": "^1.6.2",
+    "chart.js": "^4.5.1",
+    "electron-store": "^8.1.0"
   },
   "build": {
     "appId": "com.claudeusage.widget",

@@ -3,12 +3,14 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Usage Widget</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <script src="../../node_modules/chart.js/dist/chart.umd.js"></script>
 </head>
 
 <body>
@@ -27,6 +29,12 @@
                             stroke-width="2">
                             <path d="M23 4v6h-6M1 20v-6h6" />
                             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                    </button>
+                    <button class="control-btn graph-btn" id="graphBtn" title="Toggle Graph">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
                         </svg>
                     </button>
                     <button class="control-btn minimize-btn" id="minimizeBtn" title="Minimise to System Tray">−</button>
@@ -101,7 +109,7 @@
 
                 <!-- Weekly Usage -->
                 <div class="usage-section">
-                    <span class="usage-label">Weekly Limit</span>
+                    <span class="usage-label">Weekly All Models</span>
                     <div class="progress-bar">
                         <div class="progress-fill weekly" id="weeklyProgress" style="width: 0%"></div>
                     </div>
@@ -116,8 +124,35 @@
                     </div>
                 </div>
 
+                <!-- Weekly Sonnet Usage -->
+                <div class="usage-section">
+                    <span class="usage-label">Weekly Sonnet</span>
+                    <div class="progress-bar">
+                        <div class="progress-fill sonnet" id="sonnetProgress" style="width: 0%"></div>
+                    </div>
+                    <span class="usage-percentage" id="sonnetPercentage">0%</span>
+                    <div class="timer-container">
+                        <div class="timer-text" id="sonnetTimeText">--:--</div>
+                        <svg class="mini-timer" width="24" height="24" viewBox="0 0 24 24">
+                            <circle class="timer-bg" cx="12" cy="12" r="10" />
+                            <circle class="timer-progress sonnet" id="sonnetTimer" cx="12" cy="12" r="10"
+                                style="stroke-dasharray: 63; stroke-dashoffset: 63" />
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Usage Graph -->
+                <div class="graph-section" id="graphSection" style="display: none;">
+                    <canvas id="usageChart"></canvas>
+                </div>
+
                 <!-- Hidden Footer element (removed) -->
                 <span id="lastUpdate" style="display: none;"></span>
+            </div>
+
+            <!-- Status Bar -->
+            <div class="status-bar" id="statusBar" style="display: none;">
+                <span id="refreshedAgo">Refreshed just now</span>
             </div>
 
             <!-- Settings Overlay -->

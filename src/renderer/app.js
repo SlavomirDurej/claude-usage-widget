@@ -3,6 +3,10 @@ let credentials = null;
 let updateInterval = null;
 let countdownInterval = null;
 let latestUsageData = null;
+let usageChart = null;
+let graphVisible = false;
+let lastRefreshTime = null;
+let refreshedAgoInterval = null;
 const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 // DOM elements
@@ -27,11 +31,23 @@ const elements = {
     weeklyTimer: document.getElementById('weeklyTimer'),
     weeklyTimeText: document.getElementById('weeklyTimeText'),
 
+    sonnetPercentage: document.getElementById('sonnetPercentage'),
+    sonnetProgress: document.getElementById('sonnetProgress'),
+    sonnetTimer: document.getElementById('sonnetTimer'),
+    sonnetTimeText: document.getElementById('sonnetTimeText'),
+
     settingsBtn: document.getElementById('settingsBtn'),
     settingsOverlay: document.getElementById('settingsOverlay'),
     closeSettingsBtn: document.getElementById('closeSettingsBtn'),
     logoutBtn: document.getElementById('logoutBtn'),
-    coffeeBtn: document.getElementById('coffeeBtn')
+    coffeeBtn: document.getElementById('coffeeBtn'),
+
+    graphBtn: document.getElementById('graphBtn'),
+    graphSection: document.getElementById('graphSection'),
+    usageChart: document.getElementById('usageChart'),
+
+    statusBar: document.getElementById('statusBar'),
+    refreshedAgo: document.getElementById('refreshedAgo')
 };
 
 // Initialize
@@ -89,9 +105,11 @@ function setupEventListeners() {
         window.electronAPI.openExternal('https://paypal.me/SlavomirDurej?country.x=GB&locale.x=en_GB');
     });
 
+    elements.graphBtn.addEventListener('click', toggleGraph);
+
     // Listen for login success
     window.electronAPI.onLoginSuccess(async (data) => {
-        console.log('Renderer received login-success event', data);
+        console.log('Renderer received login-success event');
         credentials = data;
         await window.electronAPI.saveCredentials(data);
         console.log('Credentials saved, showing main content');
@@ -127,7 +145,7 @@ function setupEventListeners() {
 
 // Fetch usage data from Claude API
 async function fetchUsageData() {
-    console.log('fetchUsageData called', { credentials });
+    console.log('fetchUsageData called');
 
     if (!credentials.sessionKey || !credentials.organizationId) {
         console.log('Missing credentials, showing login');
@@ -160,8 +178,12 @@ function hasNoUsage(data) {
     const weeklyUtilization = data.seven_day?.utilization || 0;
     const weeklyResetsAt = data.seven_day?.resets_at;
 
+    const sonnetUtilization = data.seven_day_sonnet?.utilization || 0;
+    const sonnetResetsAt = data.seven_day_sonnet?.resets_at;
+
     return sessionUtilization === 0 && !sessionResetsAt &&
-        weeklyUtilization === 0 && !weeklyResetsAt;
+        weeklyUtilization === 0 && !weeklyResetsAt &&
+        sonnetUtilization === 0 && !sonnetResetsAt;
 }
 
 // Update UI with usage data
@@ -177,6 +199,16 @@ function updateUI(data) {
     showMainContent();
     refreshTimers();
     startCountdown();
+
+    // Update refresh time
+    lastRefreshTime = Date.now();
+    updateRefreshedAgo();
+    startRefreshedAgoTimer();
+
+    // Auto-refresh chart if visible
+    if (graphVisible) {
+        loadChart();
+    }
 }
 
 // Track if we've already triggered a refresh for expired timers
@@ -247,6 +279,23 @@ function refreshTimers() {
         elements.weeklyTimer,
         elements.weeklyTimeText,
         weeklyResetsAt,
+        7 * 24 * 60 // 7 days in minutes
+    );
+
+    // Sonnet data
+    const sonnetUtilization = latestUsageData.seven_day_sonnet?.utilization || 0;
+    const sonnetResetsAt = latestUsageData.seven_day_sonnet?.resets_at;
+
+    updateProgressBar(
+        elements.sonnetProgress,
+        elements.sonnetPercentage,
+        sonnetUtilization
+    );
+
+    updateTimer(
+        elements.sonnetTimer,
+        elements.sonnetTimeText,
+        sonnetResetsAt,
         7 * 24 * 60 // 7 days in minutes
     );
 }
@@ -348,6 +397,7 @@ function showLoginRequired() {
     elements.noUsageContainer.style.display = 'none';
     elements.autoLoginContainer.style.display = 'none';
     elements.mainContent.style.display = 'none';
+    elements.statusBar.style.display = 'none';
     stopAutoUpdate();
 }
 
@@ -374,6 +424,10 @@ function showMainContent() {
     elements.noUsageContainer.style.display = 'none';
     elements.autoLoginContainer.style.display = 'none';
     elements.mainContent.style.display = 'block';
+    elements.statusBar.style.display = 'block';
+    if (!lastRefreshTime) {
+        elements.refreshedAgo.textContent = 'Refreshed just now';
+    }
 }
 
 function showError(message) {
@@ -414,6 +468,111 @@ document.head.appendChild(style);
 init();
 
 // Cleanup on unload
+// Refresh time tracking
+function updateRefreshedAgo() {
+    if (!lastRefreshTime) return;
+    
+    const now = Date.now();
+    const diff = now - lastRefreshTime;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    
+    let text;
+    if (seconds < 60) {
+        text = 'Refreshed just now';
+    } else if (minutes === 1) {
+        text = 'Refreshed 1 minute ago';
+    } else {
+        text = `Refreshed ${minutes} minutes ago`;
+    }
+    
+    elements.refreshedAgo.textContent = text;
+}
+
+function startRefreshedAgoTimer() {
+    if (refreshedAgoInterval) clearInterval(refreshedAgoInterval);
+    refreshedAgoInterval = setInterval(updateRefreshedAgo, 30000); // Update every 30 seconds
+}
+
+// Graph functions
+function toggleGraph() {
+    graphVisible = !graphVisible;
+    elements.graphSection.style.display = graphVisible ? 'block' : 'none';
+    elements.graphBtn.classList.toggle('active', graphVisible);
+    window.electronAPI.toggleGraph(graphVisible);
+
+    if (graphVisible) {
+        loadChart();
+    }
+}
+
+async function loadChart() {
+    const history = await window.electronAPI.getUsageHistory();
+
+    if (history.length === 0) return;
+
+    const labels = history.map(h => {
+        const date = new Date(h.timestamp);
+        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    });
+
+    renderChart(labels, history);
+}
+
+function renderChart(labels, history) {
+    if (usageChart) usageChart.destroy();
+
+    // Calculate dynamic y-axis max (round up to nearest 10)
+    const allValues = history.flatMap(h => [h.session, h.weekly, h.sonnet]);
+    const maxValue = Math.max(...allValues);
+    const yMax = Math.ceil(maxValue / 10) * 10 || 10; // Minimum 10%
+
+    const ctx = elements.usageChart.getContext('2d');
+    usageChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    data: history.map(h => h.session),
+                    borderColor: '#8b5cf6',  // Purple - matches session bar
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.1,
+                    pointRadius: 1
+                },
+                {
+                    data: history.map(h => h.weekly),
+                    borderColor: '#3b82f6',  // Blue - matches weekly bar
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 1
+                },
+                {
+                    data: history.map(h => h.sonnet),
+                    borderColor: '#10b981',  // Green - matches sonnet bar
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { min: 0, max: yMax, ticks: { callback: v => v + '%' } },
+                x: { display: false }
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+}
+
 window.addEventListener('beforeunload', () => {
     stopAutoUpdate();
     if (countdownInterval) clearInterval(countdownInterval);

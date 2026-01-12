@@ -7,6 +7,27 @@ const store = new Store({
   encryptionKey: 'claude-widget-secure-key-2024'
 });
 
+const HISTORY_RETENTION_DAYS = 30;
+const GRAPH_HEIGHT = 232;
+
+function storeUsageHistory(data) {
+  const timestamp = Date.now();
+  const history = store.get('usageHistory', []);
+
+  history.push({
+    timestamp,
+    session: data.five_hour?.utilization || 0,
+    weekly: data.seven_day?.utilization || 0,
+    sonnet: data.seven_day_sonnet?.utilization || 0
+  });
+
+  // Prune data older than 30 days
+  const cutoff = timestamp - (HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const pruned = history.filter(h => h.timestamp > cutoff);
+
+  store.set('usageHistory', pruned);
+}
+
 let mainWindow = null;
 let loginWindow = null;
 let silentLoginWindow = null;
@@ -14,7 +35,7 @@ let tray = null;
 
 // Window configuration
 const WIDGET_WIDTH = 480;
-const WIDGET_HEIGHT = 140;
+const WIDGET_HEIGHT = 204;
 
 function createMainWindow() {
   // Load saved position or use defaults
@@ -108,7 +129,7 @@ function createLoginWindow() {
 
           if (response.data && Array.isArray(response.data) && response.data.length > 0) {
             orgId = response.data[0].uuid || response.data[0].id;
-            console.log('Org ID fetched from API:', orgId);
+            console.log('Org ID fetched from API');
           }
         } catch (err) {
           console.log('API not ready yet:', err.message);
@@ -229,7 +250,7 @@ async function attemptSilentLogin() {
 
             if (response.data && Array.isArray(response.data) && response.data.length > 0) {
               orgId = response.data[0].uuid || response.data[0].id;
-              console.log('[Main] Silent login: Org ID fetched from API:', orgId);
+              console.log('[Main] Silent login: Org ID fetched from API');
             }
           } catch (err) {
             console.log('[Main] Silent login: API not ready yet:', err.message);
@@ -443,22 +464,39 @@ ipcMain.on('open-external', (event, url) => {
   shell.openExternal(url);
 });
 
+ipcMain.handle('get-usage-history', () => {
+  const history = store.get('usageHistory', []);
+  // Return last 7 days
+  const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
+  return history.filter(h => h.timestamp > cutoff);
+});
+
+ipcMain.on('toggle-graph', (event, visible) => {
+  if (mainWindow) {
+    const bounds = mainWindow.getBounds();
+    const newHeight = visible ? WIDGET_HEIGHT + GRAPH_HEIGHT : WIDGET_HEIGHT;
+    mainWindow.setBounds({
+      x: bounds.x,
+      y: bounds.y,
+      width: WIDGET_WIDTH,
+      height: newHeight
+    });
+  }
+});
+
 ipcMain.handle('fetch-usage-data', async () => {
   console.log('[Main] fetch-usage-data handler called');
   const sessionKey = store.get('sessionKey');
   const organizationId = store.get('organizationId');
 
-  console.log('[Main] Credentials:', {
-    hasSessionKey: !!sessionKey,
-    organizationId
-  });
+  console.log('[Main] Credentials present:', !!sessionKey && !!organizationId);
 
   if (!sessionKey || !organizationId) {
     throw new Error('Missing credentials');
   }
 
   try {
-    console.log('[Main] Making API request to:', `https://claude.ai/api/organizations/${organizationId}/usage`);
+    console.log('[Main] Making API request to usage endpoint');
     const response = await axios.get(
       `https://claude.ai/api/organizations/${organizationId}/usage`,
       {
@@ -469,6 +507,7 @@ ipcMain.handle('fetch-usage-data', async () => {
       }
     );
     console.log('[Main] API request successful, status:', response.status);
+    storeUsageHistory(response.data);
     return response.data;
   } catch (error) {
     console.error('[Main] API request failed:', error.message);

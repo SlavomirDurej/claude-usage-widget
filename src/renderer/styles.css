@@ -353,6 +353,11 @@ body {
     box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
 }
 
+.progress-fill.sonnet {
+    background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
 
 /* Timer Container */
 .timer-container {
@@ -385,6 +390,36 @@ body {
 
 .timer-progress.weekly {
     stroke: #3b82f6;
+}
+
+.timer-progress.sonnet {
+    stroke: #10b981;
+}
+
+/* Graph Section */
+.graph-section {
+    margin-top: 12px;
+    padding: 16px 16px 8px;
+    height: 220px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.graph-section canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.graph-btn.active {
+    background: rgba(139, 92, 246, 0.3);
+}
+
+/* Status Bar */
+.status-bar {
+    padding: 4px 16px 8px;
+    text-align: center;
+    font-size: 10px;
+    color: #666;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .timer-text {
