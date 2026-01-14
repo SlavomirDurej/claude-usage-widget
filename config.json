@@ -1,0 +1,7 @@
+{
+  "refreshIntervalMinutes": 5,
+  "chartDays": 7,
+  "historyRetentionDays": 30,
+  "silentLoginTimeoutSeconds": 15,
+  "showWeeklySonnet": true
+}

@@ -40,5 +40,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Graph
   getUsageHistory: () => ipcRenderer.invoke('get-usage-history'),
-  toggleGraph: (visible) => ipcRenderer.send('toggle-graph', visible)
+  toggleGraph: (visible) => ipcRenderer.send('toggle-graph', visible),
+
+  // Config
+  getConfig: () => ipcRenderer.invoke('get-config')
 });

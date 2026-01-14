@@ -1,14 +1,47 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const Store = require('electron-store');
+
+// Prevent GPU cache locking issues on Windows
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 const axios = require('axios');
+
+// Load user config with defaults
+const DEFAULT_CONFIG = {
+  refreshIntervalMinutes: 5,
+  chartDays: 7,
+  historyRetentionDays: 30,
+  silentLoginTimeoutSeconds: 15,
+  showWeeklySonnet: true
+};
+
+function loadConfig() {
+  const configPath = path.join(__dirname, 'config.json');
+  try {
+    if (fs.existsSync(configPath)) {
+      const userConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      return { ...DEFAULT_CONFIG, ...userConfig };
+    }
+  } catch (error) {
+    console.error('Failed to load config.json, using defaults:', error.message);
+  }
+  return DEFAULT_CONFIG;
+}
+
+const config = loadConfig();
 
 const store = new Store({
   encryptionKey: 'claude-widget-secure-key-2024'
 });
 
-const HISTORY_RETENTION_DAYS = 30;
 const GRAPH_HEIGHT = 232;
+const WIDGET_HEIGHT_WITH_SONNET = 204;
+const WIDGET_HEIGHT_WITHOUT_SONNET = 170;
+
+function getWidgetHeight() {
+  return config.showWeeklySonnet ? WIDGET_HEIGHT_WITH_SONNET : WIDGET_HEIGHT_WITHOUT_SONNET;
+}
 
 function storeUsageHistory(data) {
   const timestamp = Date.now();
@@ -21,8 +54,8 @@ function storeUsageHistory(data) {
     sonnet: data.seven_day_sonnet?.utilization || 0
   });
 
-  // Prune data older than 30 days
-  const cutoff = timestamp - (HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  // Prune data older than configured retention period
+  const cutoff = timestamp - (config.historyRetentionDays * 24 * 60 * 60 * 1000);
   const pruned = history.filter(h => h.timestamp > cutoff);
 
   store.set('usageHistory', pruned);
@@ -35,14 +68,13 @@ let tray = null;
 
 // Window configuration
 const WIDGET_WIDTH = 480;
-const WIDGET_HEIGHT = 204;
 
 function createMainWindow() {
   // Load saved position or use defaults
   const savedPosition = store.get('windowPosition');
   const windowOptions = {
     width: WIDGET_WIDTH,
-    height: WIDGET_HEIGHT,
+    height: getWidgetHeight(),
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -222,7 +254,7 @@ async function attemptSilentLogin() {
 
     let loginCheckInterval = null;
     let hasLoggedIn = false;
-    const SILENT_LOGIN_TIMEOUT = 15000; // 15 seconds timeout
+    const SILENT_LOGIN_TIMEOUT = config.silentLoginTimeoutSeconds * 1000;
 
     // Function to check login status
     async function checkLoginStatus() {
@@ -466,15 +498,20 @@ ipcMain.on('open-external', (event, url) => {
 
 ipcMain.handle('get-usage-history', () => {
   const history = store.get('usageHistory', []);
-  // Return last 7 days
-  const cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
+  // Return history for configured chart days
+  const cutoff = Date.now() - (config.chartDays * 24 * 60 * 60 * 1000);
   return history.filter(h => h.timestamp > cutoff);
+});
+
+ipcMain.handle('get-config', () => {
+  return config;
 });
 
 ipcMain.on('toggle-graph', (event, visible) => {
   if (mainWindow) {
     const bounds = mainWindow.getBounds();
-    const newHeight = visible ? WIDGET_HEIGHT + GRAPH_HEIGHT : WIDGET_HEIGHT;
+    const baseHeight = getWidgetHeight();
+    const newHeight = visible ? baseHeight + GRAPH_HEIGHT : baseHeight;
     mainWindow.setBounds({
       x: bounds.x,
       y: bounds.y,

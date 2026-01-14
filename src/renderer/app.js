@@ -7,7 +7,7 @@ let usageChart = null;
 let graphVisible = false;
 let lastRefreshTime = null;
 let refreshedAgoInterval = null;
-const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+let appConfig = null;
 
 // DOM elements
 const elements = {
@@ -47,13 +47,21 @@ const elements = {
     usageChart: document.getElementById('usageChart'),
 
     statusBar: document.getElementById('statusBar'),
-    refreshedAgo: document.getElementById('refreshedAgo')
+    refreshedAgo: document.getElementById('refreshedAgo'),
+
+    sonnetSection: document.getElementById('sonnetSection')
 };
 
 // Initialize
 async function init() {
     setupEventListeners();
+    appConfig = await window.electronAPI.getConfig();
     credentials = await window.electronAPI.getCredentials();
+
+    // Hide sonnet section if configured
+    if (!appConfig.showWeeklySonnet) {
+        elements.sonnetSection.style.display = 'none';
+    }
 
     if (credentials.sessionKey && credentials.organizationId) {
         showMainContent();
@@ -438,9 +446,10 @@ function showError(message) {
 // Auto-update management
 function startAutoUpdate() {
     stopAutoUpdate();
+    const intervalMs = (appConfig?.refreshIntervalMinutes || 5) * 60 * 1000;
     updateInterval = setInterval(() => {
         fetchUsageData();
-    }, UPDATE_INTERVAL);
+    }, intervalMs);
 }
 
 function stopAutoUpdate() {
@@ -523,42 +532,47 @@ function renderChart(labels, history) {
     if (usageChart) usageChart.destroy();
 
     // Calculate dynamic y-axis max (round up to nearest 10)
-    const allValues = history.flatMap(h => [h.session, h.weekly, h.sonnet]);
+    const allValues = appConfig.showWeeklySonnet
+        ? history.flatMap(h => [h.session, h.weekly, h.sonnet])
+        : history.flatMap(h => [h.session, h.weekly]);
     const maxValue = Math.max(...allValues);
     const yMax = Math.ceil(maxValue / 10) * 10 || 10; // Minimum 10%
+
+    const datasets = [
+        {
+            data: history.map(h => h.session),
+            borderColor: '#8b5cf6',  // Purple - matches session bar
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.1,
+            pointRadius: 1
+        },
+        {
+            data: history.map(h => h.weekly),
+            borderColor: '#3b82f6',  // Blue - matches weekly bar
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.4,
+            pointRadius: 1
+        }
+    ];
+
+    // Only add sonnet dataset if configured to show
+    if (appConfig.showWeeklySonnet) {
+        datasets.push({
+            data: history.map(h => h.sonnet),
+            borderColor: '#10b981',  // Green - matches sonnet bar
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.4,
+            pointRadius: 1
+        });
+    }
 
     const ctx = elements.usageChart.getContext('2d');
     usageChart = new Chart(ctx, {
         type: 'line',
-        data: {
-            labels,
-            datasets: [
-                {
-                    data: history.map(h => h.session),
-                    borderColor: '#8b5cf6',  // Purple - matches session bar
-                    backgroundColor: 'transparent',
-                    borderWidth: 2,
-                    tension: 0.1,
-                    pointRadius: 1
-                },
-                {
-                    data: history.map(h => h.weekly),
-                    borderColor: '#3b82f6',  // Blue - matches weekly bar
-                    backgroundColor: 'transparent',
-                    borderWidth: 2,
-                    tension: 0.4,
-                    pointRadius: 1
-                },
-                {
-                    data: history.map(h => h.sonnet),
-                    borderColor: '#10b981',  // Green - matches sonnet bar
-                    backgroundColor: 'transparent',
-                    borderWidth: 2,
-                    tension: 0.4,
-                    pointRadius: 1
-                }
-            ]
-        },
+        data: { labels, datasets },
         options: {
             responsive: true,
             maintainAspectRatio: false,
