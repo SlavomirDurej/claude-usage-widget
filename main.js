@@ -470,7 +470,7 @@ ipcMain.on('open-login', () => {
 });
 
 ipcMain.on('minimize-window', () => {
-  if (mainWindow) mainWindow.hide();
+  if (mainWindow) mainWindow.minimize();
 });
 
 ipcMain.on('close-window', () => {
@@ -593,6 +593,9 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (mainWindow === null) {
     createMainWindow();
+  } else {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
   }
 });
 
