@@ -41,6 +41,12 @@ npm install
 # Run in development mode
 npm start
 
+# Run with auth debug logging
+npm run start:debug
+
+# Run with auth debug logging + devtools
+npm run start:debug:dev
+
 # Build installer for Windows
 npm run build:win
 ```
@@ -115,6 +121,16 @@ const UPDATE_INTERVAL = 5 * 60 * 1000; // Change to your preference (in millisec
 - Click the refresh button manually
 - Ensure Claude.ai is accessible in your region
 - Try re-logging in from the system tray menu
+
+### Auth debug logging
+If login/usage calls fail, run with debug logging:
+```bash
+npm run start:debug
+```
+Look for lines that begin with:
+- `[Auth][Debug] Login cookies:`
+- `[Auth][Debug] Usage window fetch failed:`
+- `[Auth][Debug] HTTP error`
 
 ### Widget position not saving
 - Window position is now saved automatically when you drag it

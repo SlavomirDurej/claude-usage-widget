@@ -5,6 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "start:debug": "cross-env DEBUG_AUTH=1 electron .",
+    "start:debug:dev": "cross-env DEBUG_AUTH=1 NODE_ENV=development electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
