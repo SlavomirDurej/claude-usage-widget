@@ -1,6 +1,6 @@
 # Claude Usage Widget
 
-A beautiful, standalone Windows desktop widget that displays your Claude.ai usage statistics in real-time.
+A beautiful, standalone Windows/Mac desktop widget that displays your Claude.ai usage statistics in real-time.
 
 ![Claude Usage Widget](assets/claude-usage-screenshot.jpg)
 
@@ -18,6 +18,7 @@ A beautiful, standalone Windows desktop widget that displays your Claude.ai usag
 ## Installation
 
 ### Download Pre-built Release
+
 1. Download the latest `Claude-Usage-Widget-Setup.exe` from [Releases](https://github.com/SlavomirDurej/claude-usage-widget/releases)
 2. Run the installer
 3. Launch "Claude Usage Widget" from Start Menu
@@ -25,6 +26,7 @@ A beautiful, standalone Windows desktop widget that displays your Claude.ai usag
 ### Build from Source
 
 **Prerequisites:**
+
 - Node.js 18+ ([Download](https://nodejs.org))
 - npm (comes with Node.js)
 
@@ -73,6 +75,7 @@ The installer will be created in the `dist/` folder.
 ### System Tray Menu
 
 Right-click the tray icon for:
+
 - Show/Hide widget
 - Refresh usage data
 - Re-login (if session expires)
@@ -82,6 +85,7 @@ Right-click the tray icon for:
 ## Understanding the Display
 
 ### Current Session
+
 - **Progress Bar** - Shows usage from 0-100%
 - **Timer** - Time remaining until 5-hour session resets
 - **Color Coding**:
@@ -90,6 +94,7 @@ Right-click the tray icon for:
   - Red: Critical usage (90-100%)
 
 ### Weekly Limit
+
 - **Progress Bar** - Shows weekly usage from 0-100%
 - **Timer** - Time remaining until weekly reset (Wednesdays 7:00 AM)
 - **Same color coding** as session usage
@@ -105,6 +110,7 @@ Right-click the tray icon for:
 ### Custom Refresh Interval
 
 Edit `src/renderer/app.js`:
+
 ```javascript
 const UPDATE_INTERVAL = 5 * 60 * 1000; // Change to your preference (in milliseconds)
 ```
@@ -112,31 +118,39 @@ const UPDATE_INTERVAL = 5 * 60 * 1000; // Change to your preference (in millisec
 ## Troubleshooting
 
 ### "Login Required" keeps appearing
+
 - Your Claude.ai session may have expired
 - Click "Login to Claude" to re-authenticate
 - Check that you're logging into the correct account
 
 ### Widget not updating
+
 - Check your internet connection
 - Click the refresh button manually
 - Ensure Claude.ai is accessible in your region
 - Try re-logging in from the system tray menu
 
 ### Auth debug logging
+
 If login/usage calls fail, run with debug logging:
+
 ```bash
 npm run start:debug
 ```
+
 Look for lines that begin with:
+
 - `[Auth][Debug] Login cookies:`
 - `[Auth][Debug] Usage window fetch failed:`
 - `[Auth][Debug] HTTP error`
 
 ### Widget position not saving
+
 - Window position is now saved automatically when you drag it
 - Position will be restored when you restart the app
 
 ### Build errors
+
 ```bash
 # Clear cache and reinstall
 rm -rf node_modules package-lock.json
@@ -153,17 +167,20 @@ npm install
 ## Technical Details
 
 **Built with:**
+
 - Electron 28.0.0
 - Pure JavaScript (no framework overhead)
 - Native Node.js APIs
 - electron-store for secure storage
 
 **API Endpoint:**
+
 ```
 https://claude.ai/api/organizations/{org_id}/usage
 ```
 
 **Storage Location:**
+
 ```
 %APPDATA%/claude-usage-widget/config.json (encrypted)
 ```
@@ -195,6 +212,7 @@ This is an unofficial tool and is not affiliated with or endorsed by Anthropic. 
 ## Support
 
 If you encounter issues:
+
 1. Check the [Issues](issues) page
 2. Create a new issue with details about your problem
 3. Include your OS version and any error messages
