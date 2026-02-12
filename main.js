@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, nativeImage, net } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const axios = require('axios');
@@ -13,6 +13,7 @@ const isWindows = process.platform === 'win32';
 let mainWindow = null;
 let loginWindow = null;
 let silentLoginWindow = null;
+let apiWindow = null;
 let tray = null;
 
 // Window configuration
@@ -23,6 +24,167 @@ const WIDGET_HEIGHT = 140;
 const USER_AGENT = isMac
   ? 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
+async function getClaudeCookieHeader() {
+  const cookies = await session.defaultSession.cookies.get({ url: 'https://claude.ai' });
+  if (!cookies || cookies.length === 0) return '';
+  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+}
+
+function claudeGetJson(url) {
+  return new Promise((resolve, reject) => {
+    const request = net.request({
+      method: 'GET',
+      url,
+      session: session.defaultSession,
+      redirect: 'follow'
+    });
+
+    request.setHeader('User-Agent', USER_AGENT);
+    request.setHeader('Accept', 'application/json');
+    request.setHeader('Referer', 'https://claude.ai/');
+
+    request.on('response', (response) => {
+      let body = '';
+      response.on('data', (chunk) => {
+        body += chunk.toString('utf8');
+      });
+      response.on('end', () => {
+        if (response.statusCode && response.statusCode >= 200 && response.statusCode < 300) {
+          try {
+            resolve(body ? JSON.parse(body) : null);
+          } catch (error) {
+            reject(new Error(`Invalid JSON response (status ${response.statusCode})`));
+          }
+        } else {
+          if (process.env.DEBUG_AUTH === '1') {
+            const snippet = body ? body.slice(0, 300) : '';
+            console.log('[Auth][Debug] HTTP error', {
+              status: response.statusCode,
+              headers: response.headers,
+              bodySnippet: snippet
+            });
+          }
+          reject(new Error(`HTTP ${response.statusCode}`));
+        }
+      });
+    });
+
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+async function logClaudeCookieNames(prefix) {
+  if (process.env.DEBUG_AUTH !== '1') return;
+  const cookies = await session.defaultSession.cookies.get({ url: 'https://claude.ai' });
+  const names = cookies.map((c) => c.name).sort();
+  console.log(`[Auth][Debug] ${prefix} cookies:`, names);
+}
+
+async function fetchOrgIdViaWindow(win, label) {
+  if (!win || win.isDestroyed()) return null;
+  try {
+    const result = await win.webContents.executeJavaScript(
+      `(async () => {
+        try {
+          const res = await fetch('https://claude.ai/api/organizations', { credentials: 'include' });
+          const text = await res.text();
+          return { ok: res.ok, status: res.status, text };
+        } catch (e) {
+          return { error: e.message };
+        }
+      })()`,
+      true
+    );
+
+    if (result?.ok) {
+      const data = JSON.parse(result.text || '[]');
+      if (Array.isArray(data) && data.length > 0) {
+        return data[0].uuid || data[0].id || null;
+      }
+      return null;
+    }
+
+    if (process.env.DEBUG_AUTH === '1') {
+      console.log(`[Auth][Debug] ${label} window fetch failed:`, result);
+    }
+    return null;
+  } catch (error) {
+    if (process.env.DEBUG_AUTH === '1') {
+      console.log(`[Auth][Debug] ${label} window fetch error:`, error.message);
+    }
+    return null;
+  }
+}
+
+function createApiWindow() {
+  if (apiWindow && !apiWindow.isDestroyed()) {
+    return apiWindow;
+  }
+
+  apiWindow = new BrowserWindow({
+    width: 800,
+    height: 700,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  apiWindow.loadURL('https://claude.ai');
+
+  apiWindow.on('closed', () => {
+    apiWindow = null;
+  });
+
+  return apiWindow;
+}
+
+async function getApiWindowReady() {
+  const win = createApiWindow();
+  if (win.webContents.isLoading()) {
+    await new Promise((resolve) => {
+      win.webContents.once('did-finish-load', resolve);
+    });
+  }
+  return win;
+}
+
+async function fetchUsageViaWindow(organizationId) {
+  const win = await getApiWindowReady();
+  if (!win || win.isDestroyed()) return null;
+
+  try {
+    const result = await win.webContents.executeJavaScript(
+      `(async () => {
+        try {
+          const res = await fetch('https://claude.ai/api/organizations/${organizationId}/usage', { credentials: 'include' });
+          const text = await res.text();
+          return { ok: res.ok, status: res.status, text };
+        } catch (e) {
+          return { error: e.message };
+        }
+      })()`,
+      true
+    );
+
+    if (result?.ok) {
+      return result.text ? JSON.parse(result.text) : null;
+    }
+
+    if (process.env.DEBUG_AUTH === '1') {
+      console.log('[Auth][Debug] Usage window fetch failed:', result);
+    }
+    return null;
+  } catch (error) {
+    if (process.env.DEBUG_AUTH === '1') {
+      console.log('[Auth][Debug] Usage window fetch error:', error.message);
+    }
+    return null;
+  }
+}
 
 // Platform-specific icon
 function getAppIcon() {
@@ -125,32 +287,32 @@ function createLoginWindow() {
     if (hasLoggedIn || !loginWindow) return;
 
     try {
-      const cookies = await session.defaultSession.cookies.get({
-        url: 'https://claude.ai',
-        name: 'sessionKey'
-      });
-
-      if (cookies.length > 0) {
-        const sessionKey = cookies[0].value;
-        console.log('Session key found, attempting to get org ID...');
-
-        // Fetch org ID from API
-        let orgId = null;
-        try {
-          const response = await axios.get('https://claude.ai/api/organizations', {
-            headers: {
-              'Cookie': `sessionKey=${sessionKey}`,
-              'User-Agent': USER_AGENT
-            }
+        const cookieHeader = await getClaudeCookieHeader();
+        if (cookieHeader) {
+          const sessionKeyCookie = await session.defaultSession.cookies.get({
+            url: 'https://claude.ai',
+            name: 'sessionKey'
           });
+          const sessionKey = sessionKeyCookie[0]?.value;
+          console.log('Session key found, attempting to get org ID...');
 
-          if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-            orgId = response.data[0].uuid || response.data[0].id;
-            console.log('Org ID fetched from API:', orgId);
+          // Fetch org ID from API
+          let orgId = null;
+          try {
+            await logClaudeCookieNames('Login');
+            orgId = await fetchOrgIdViaWindow(loginWindow, 'Login');
+            if (!orgId) {
+              const orgs = await claudeGetJson('https://claude.ai/api/organizations');
+              if (orgs && Array.isArray(orgs) && orgs.length > 0) {
+                orgId = orgs[0].uuid || orgs[0].id;
+              }
+            }
+            if (orgId) {
+              console.log('Org ID fetched from API:', orgId);
+            }
+          } catch (err) {
+            console.log('API not ready yet:', err.message);
           }
-        } catch (err) {
-          console.log('API not ready yet:', err.message);
-        }
 
         if (sessionKey && orgId) {
           hasLoggedIn = true;
@@ -246,27 +408,27 @@ async function attemptSilentLogin() {
       if (hasLoggedIn || !silentLoginWindow) return;
 
       try {
-        const cookies = await session.defaultSession.cookies.get({
-          url: 'https://claude.ai',
-          name: 'sessionKey'
-        });
-
-        if (cookies.length > 0) {
-          const sessionKey = cookies[0].value;
+        const cookieHeader = await getClaudeCookieHeader();
+        if (cookieHeader) {
+          const sessionKeyCookie = await session.defaultSession.cookies.get({
+            url: 'https://claude.ai',
+            name: 'sessionKey'
+          });
+          const sessionKey = sessionKeyCookie[0]?.value;
           console.log('[Main] Silent login: Session key found, attempting to get org ID...');
 
           // Fetch org ID from API
           let orgId = null;
           try {
-            const response = await axios.get('https://claude.ai/api/organizations', {
-              headers: {
-                'Cookie': `sessionKey=${sessionKey}`,
-                'User-Agent': USER_AGENT
+            await logClaudeCookieNames('SilentLogin');
+            orgId = await fetchOrgIdViaWindow(silentLoginWindow, 'SilentLogin');
+            if (!orgId) {
+              const orgs = await claudeGetJson('https://claude.ai/api/organizations');
+              if (orgs && Array.isArray(orgs) && orgs.length > 0) {
+                orgId = orgs[0].uuid || orgs[0].id;
               }
-            });
-
-            if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-              orgId = response.data[0].uuid || response.data[0].id;
+            }
+            if (orgId) {
               console.log('[Main] Silent login: Org ID fetched from API:', orgId);
             }
           } catch (err) {
@@ -511,17 +673,12 @@ ipcMain.handle('fetch-usage-data', async () => {
 
   try {
     console.log('[Main] Making API request to:', `https://claude.ai/api/organizations/${organizationId}/usage`);
-    const response = await axios.get(
-      `https://claude.ai/api/organizations/${organizationId}/usage`,
-      {
-        headers: {
-          'Cookie': `sessionKey=${sessionKey}`,
-          'User-Agent': USER_AGENT
-        }
-      }
-    );
-    console.log('[Main] API request successful, status:', response.status);
-    return response.data;
+    let usage = await fetchUsageViaWindow(organizationId);
+    if (!usage) {
+      usage = await claudeGetJson(`https://claude.ai/api/organizations/${organizationId}/usage`);
+    }
+    console.log('[Main] API request successful');
+    return usage;
   } catch (error) {
     console.error('[Main] API request failed:', error.message);
     if (error.response) {
