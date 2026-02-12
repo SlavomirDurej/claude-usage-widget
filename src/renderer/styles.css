@@ -31,6 +31,17 @@ body {
     flex-direction: column;
 }
 
+/* macOS-specific: rounded corners and vibrancy-compatible background */
+body.platform-darwin .widget-container {
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: linear-gradient(135deg, rgba(30, 30, 46, 0.85) 0%, rgba(42, 42, 62, 0.85) 100%);
+}
+
+body.platform-darwin .title-bar {
+    border-radius: 10px 10px 0 0;
+}
+
 /* Title Bar */
 .title-bar {
     -webkit-app-region: drag;

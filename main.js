@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, nativeImage } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const axios = require('axios');
@@ -6,6 +6,9 @@ const axios = require('axios');
 const store = new Store({
   encryptionKey: 'claude-widget-secure-key-2024'
 });
+
+const isMac = process.platform === 'darwin';
+const isWindows = process.platform === 'win32';
 
 let mainWindow = null;
 let loginWindow = null;
@@ -15,6 +18,32 @@ let tray = null;
 // Window configuration
 const WIDGET_WIDTH = 480;
 const WIDGET_HEIGHT = 140;
+
+// Platform-specific User-Agent
+const USER_AGENT = isMac
+  ? 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
+// Platform-specific icon
+function getAppIcon() {
+  if (isWindows) {
+    return path.join(__dirname, 'assets/icon.ico');
+  }
+  return path.join(__dirname, 'assets/icon.png');
+}
+
+// Get tray icon (macOS uses template images for proper dark/light menu bar support)
+function getTrayIcon() {
+  if (isMac) {
+    // On macOS, create a properly sized template image for the menu bar
+    // Template images automatically adapt to dark/light menu bar
+    const icon = nativeImage.createFromPath(path.join(__dirname, 'assets/tray-icon.png'));
+    const resized = icon.resize({ width: 18, height: 18 });
+    resized.setTemplateImage(true);
+    return resized;
+  }
+  return path.join(__dirname, 'assets/tray-icon.png');
+}
 
 function createMainWindow() {
   // Load saved position or use defaults
@@ -27,13 +56,22 @@ function createMainWindow() {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: false,
-    icon: path.join(__dirname, 'assets/icon.ico'),
+    icon: getAppIcon(),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     }
   };
+
+  // macOS-specific window options
+  if (isMac) {
+    windowOptions.vibrancy = 'under-window';
+    windowOptions.visualEffectState = 'active';
+    windowOptions.roundedCorners = true;
+    // Hide from Cmd+Tab app switcher while keeping tray/dock presence
+    windowOptions.skipTaskbar = true;
+  }
 
   // Apply saved position if it exists
   if (savedPosition) {
@@ -45,9 +83,9 @@ function createMainWindow() {
 
   mainWindow.loadFile('src/renderer/index.html');
 
-  // Make window draggable
+  // Make window draggable and always on top
   mainWindow.setAlwaysOnTop(true, 'floating');
-  mainWindow.setVisibleOnAllWorkspaces(true);
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   // Save position when window is moved
   mainWindow.on('move', () => {
@@ -102,7 +140,7 @@ function createLoginWindow() {
           const response = await axios.get('https://claude.ai/api/organizations', {
             headers: {
               'Cookie': `sessionKey=${sessionKey}`,
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              'User-Agent': USER_AGENT
             }
           });
 
@@ -223,7 +261,7 @@ async function attemptSilentLogin() {
             const response = await axios.get('https://claude.ai/api/organizations', {
               headers: {
                 'Cookie': `sessionKey=${sessionKey}`,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': USER_AGENT
               }
             });
 
@@ -322,7 +360,7 @@ async function attemptSilentLogin() {
 
 function createTray() {
   try {
-    tray = new Tray(path.join(__dirname, 'assets/tray-icon.png'));
+    tray = new Tray(getTrayIcon());
 
     const contextMenu = Menu.buildFromTemplate([
       {
@@ -330,6 +368,7 @@ function createTray() {
         click: () => {
           if (mainWindow) {
             mainWindow.show();
+            if (isMac) mainWindow.focus();
           } else {
             createMainWindow();
           }
@@ -360,7 +399,7 @@ function createTray() {
       },
       { type: 'separator' },
       {
-        label: 'Exit',
+        label: 'Quit',
         click: () => {
           app.quit();
         }
@@ -370,11 +409,15 @@ function createTray() {
     tray.setToolTip('Claude Usage Widget');
     tray.setContextMenu(contextMenu);
 
-    tray.on('click', () => {
-      if (mainWindow) {
-        mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
-      }
-    });
+    // On macOS, clicking the tray icon shows the context menu by default
+    // On Windows/Linux, toggle window visibility on click
+    if (!isMac) {
+      tray.on('click', () => {
+        if (mainWindow) {
+          mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+        }
+      });
+    }
   } catch (error) {
     console.error('Failed to create tray:', error);
   }
@@ -421,7 +464,16 @@ ipcMain.on('minimize-window', () => {
 });
 
 ipcMain.on('close-window', () => {
-  app.quit();
+  if (isMac) {
+    // On macOS, closing the widget hides it (app stays in menu bar)
+    if (mainWindow) mainWindow.hide();
+  } else {
+    app.quit();
+  }
+});
+
+ipcMain.handle('get-platform', () => {
+  return process.platform;
 });
 
 ipcMain.handle('get-window-position', () => {
@@ -464,7 +516,7 @@ ipcMain.handle('fetch-usage-data', async () => {
       {
         headers: {
           'Cookie': `sessionKey=${sessionKey}`,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          'User-Agent': USER_AGENT
         }
       }
     );
@@ -493,30 +545,66 @@ ipcMain.handle('fetch-usage-data', async () => {
   }
 });
 
+// macOS: Set up application menu (required for keyboard shortcuts like Cmd+Q, Cmd+C, Cmd+V)
+function createAppMenu() {
+  if (!isMac) return;
+
+  const template = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    }
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 // App lifecycle
 app.whenReady().then(() => {
+  createAppMenu();
   createMainWindow();
   createTray();
 
-  // Check if we have credentials
-  // const hasCredentials = store.get('sessionKey') && store.get('organizationId');
-  // if (!hasCredentials) {
-  //   setTimeout(() => {
-  //     createLoginWindow();
-  //   }, 1000);
-  // }
+  // On macOS, hide the dock icon since this is a menu bar widget
+  if (isMac) {
+    app.dock.hide();
+  }
 });
 
 app.on('window-all-closed', () => {
-  // Don't quit on macOS
-  if (process.platform !== 'darwin') {
-    // Keep running in tray
+  // On macOS, apps typically stay running even with no windows
+  // On all platforms, keep running in tray
+  if (!isMac) {
+    // Keep running in tray on Windows/Linux too
   }
 });
 
 app.on('activate', () => {
+  // On macOS, re-create window when dock icon is clicked (if dock is visible)
   if (mainWindow === null) {
     createMainWindow();
+  } else {
+    mainWindow.show();
   }
 });
 

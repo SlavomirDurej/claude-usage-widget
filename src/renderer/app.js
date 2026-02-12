@@ -36,6 +36,16 @@ const elements = {
 
 // Initialize
 async function init() {
+    // Apply platform-specific CSS class to body
+    const platform = window.electronAPI.platform;
+    if (platform === 'darwin') {
+        document.body.classList.add('platform-darwin');
+    } else if (platform === 'win32') {
+        document.body.classList.add('platform-win32');
+    } else {
+        document.body.classList.add('platform-linux');
+    }
+
     setupEventListeners();
     credentials = await window.electronAPI.getCredentials();
 

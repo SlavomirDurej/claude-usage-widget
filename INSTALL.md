@@ -3,12 +3,14 @@
 ## For End Users
 
 ### Option 1: Download Installer (Recommended)
+
 1. Download `Claude-Usage-Widget-Setup.exe` from releases
 2. Run the installer
 3. Launch from Start Menu
 4. Login when prompted
 
 ### Option 2: Build from Source
+
 ```bash
 # Install Node.js from https://nodejs.org (if not already installed)
 
@@ -35,7 +37,7 @@ npm run build:win
 
 ## System Requirements
 
-- **OS:** Windows 10 or later (64-bit)
+- **OS:** Windows 10 or later (64-bit) / Mac OS 26.0 or Later
 - **RAM:** 200 MB
 - **Disk:** 100 MB
 - **Internet:** Required for Claude.ai API
@@ -50,10 +52,12 @@ npm run build:win
 ## Uninstallation
 
 **Windows:**
+
 1. Settings → Apps → Claude Usage Widget → Uninstall
 2. Or run `Uninstall Claude Usage Widget.exe` from install directory
 
 **Manual cleanup:**
+
 ```
 %APPDATA%\claude-usage-widget\
 %LOCALAPPDATA%\Programs\claude-usage-widget\
@@ -62,16 +66,19 @@ npm run build:win
 ## Troubleshooting Install Issues
 
 ### "Windows protected your PC"
+
 1. Click "More info"
 2. Click "Run anyway"
 3. This is normal for unsigned apps
 
 ### Installer won't run
+
 - Ensure you have admin rights
 - Disable antivirus temporarily
 - Download again (file may be corrupted)
 
 ### Can't find after install
+
 - Check Start Menu → All Apps
 - Search for "Claude Usage Widget"
 - Check Desktop for shortcut

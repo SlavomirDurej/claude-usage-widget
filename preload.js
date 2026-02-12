@@ -36,5 +36,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // API
   fetchUsageData: () => ipcRenderer.invoke('fetch-usage-data'),
-  openExternal: (url) => ipcRenderer.send('open-external', url)
+  openExternal: (url) => ipcRenderer.send('open-external', url),
+
+  // Platform info
+  getPlatform: () => ipcRenderer.invoke('get-platform'),
+  platform: process.platform
 });
