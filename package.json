@@ -48,6 +48,12 @@
   "dependencies": {
     "electron-store": "^8.1.0"
   },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.0.0",
+    "@rollup/rollup-win32-x64-msvc": "^4.0.0",
+    "@rollup/rollup-darwin-arm64": "^4.0.0",
+    "@rollup/rollup-darwin-x64": "^4.0.0"
+  },
   "build": {
     "appId": "com.claudeusage.widget",
     "productName": "Claude Usage Widget",
