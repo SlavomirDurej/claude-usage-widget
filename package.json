@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-widget",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "description": "Desktop widget for Claude.ai usage monitoring",
   "main": "dist-main/main/main.js",
   "scripts": {
