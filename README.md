@@ -2,13 +2,9 @@
 
 A beautiful, standalone Windows desktop widget that displays your Claude.ai usage statistics in real-time.
 
-> **Note:** This is a fork of [SlavomirDurej/claude-usage-widget](https://github.com/SlavomirDurej/claude-usage-widget) with significant UX improvements and a full settings panel. Changes were developed with AI assistance (Claude).
-
----
-
-## What's New in This Fork
-
 ![Claude Usage Widget - Main](assets/screenshot-main.png)
+
+## What's New
 
 ### Settings Panel
 A full settings overlay with persistent preferences via `electron-store`.
@@ -21,7 +17,7 @@ A full settings overlay with persistent preferences via `electron-store`.
 - 🎨 **Theme selector** — Dark / Light / System
 - ⚠️ **Warning thresholds** — Configurable amber and red levels for usage bars
 
-### Improved Main Widget Layout
+### Improved Layout
 - **5-column grid** with labeled headers: Session Used / Elapsed / Resets In / Resets At
 - **Elapsed** column shows a circular timer of how far through the current window you are
 - **Resets In** shows the countdown separately so it's not confused with elapsed time
@@ -35,8 +31,6 @@ A full settings overlay with persistent preferences via `electron-store`.
 ![Claude Usage Widget - Tray](assets/screenshot-tray.png)
 
 ---
-
-## Original README
 
 ## Features
 
