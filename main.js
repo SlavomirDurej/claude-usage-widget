@@ -1,7 +1,11 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell } = require('electron');
 const path = require('path');
+const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow } = require('./src/fetch-via-window');
+
+const GITHUB_OWNER = 'SlavomirDurej';
+const GITHUB_REPO = 'claude-usage-widget';
 
 const store = new Store({
   encryptionKey: 'claude-widget-secure-key-2024'
@@ -244,6 +248,10 @@ ipcMain.on('open-external', (event, url) => {
   shell.openExternal(url);
 });
 
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});
+
 // Settings handlers
 ipcMain.handle('get-settings', () => {
   return {
@@ -252,7 +260,9 @@ ipcMain.handle('get-settings', () => {
     alwaysOnTop: store.get('settings.alwaysOnTop', true),
     theme: store.get('settings.theme', 'dark'),
     warnThreshold: store.get('settings.warnThreshold', 75),
-    dangerThreshold: store.get('settings.dangerThreshold', 90)
+    dangerThreshold: store.get('settings.dangerThreshold', 90),
+    timeFormat: store.get('settings.timeFormat', '12h'),
+    weeklyDateFormat: store.get('settings.weeklyDateFormat', 'date')
   };
 });
 
@@ -263,6 +273,8 @@ ipcMain.handle('save-settings', (event, settings) => {
   store.set('settings.theme', settings.theme);
   store.set('settings.warnThreshold', settings.warnThreshold);
   store.set('settings.dangerThreshold', settings.dangerThreshold);
+  store.set('settings.timeFormat', settings.timeFormat);
+  store.set('settings.weeklyDateFormat', settings.weeklyDateFormat);
 
   app.setLoginItemSettings({
     openAtLogin: settings.autoStart,
@@ -335,6 +347,57 @@ ipcMain.handle('detect-session-key', async () => {
     loginWin.loadURL('https://claude.ai/login');
   });
 });
+
+// Check GitHub releases for a newer version
+ipcMain.handle('check-for-update', () => {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: 'api.github.com',
+      path: `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'claude-usage-widget',
+        'Accept': 'application/vnd.github+json'
+      },
+      timeout: 5000
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          const tag = (data.tag_name || '').replace(/^v/, '');
+          const current = app.getVersion();
+          if (tag && isNewerVersion(tag, current)) {
+            resolve({ hasUpdate: true, version: tag });
+          } else {
+            resolve({ hasUpdate: false, version: null });
+          }
+        } catch {
+          resolve({ hasUpdate: false, version: null });
+        }
+      });
+    });
+
+    req.on('error', () => resolve({ hasUpdate: false, version: null }));
+    req.on('timeout', () => { req.destroy(); resolve({ hasUpdate: false, version: null }); });
+    req.end();
+  });
+});
+
+function isNewerVersion(remote, local) {
+  try {
+    const r = remote.split('.').map(Number);
+    const l = local.split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+      if ((r[i] || 0) > (l[i] || 0)) return true;
+      if ((r[i] || 0) < (l[i] || 0)) return false;
+    }
+    return false;
+  } catch { return false; }
+}
 
 ipcMain.handle('fetch-usage-data', async () => {
   const sessionKey = store.get('sessionKey');

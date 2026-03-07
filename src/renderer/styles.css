@@ -459,7 +459,7 @@ body {
 /* Expandable Section */
 .expand-section {
     border-top: 1px solid rgba(255, 255, 255, 0.05);
-    margin-top: 6px;
+    margin-top: 12px;
     padding-top: 6px;
 }
 
@@ -1112,4 +1112,110 @@ body.theme-light .expand-section {
 
 body.theme-light .expand-arrow {
     color: #909090;
+}
+
+/* ── Update Banner ─────────────────────────────────────────── */
+.update-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1a2a00;
+    padding: 4px 10px;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+}
+
+.update-banner-text {
+    font-size: 11px;
+    color: #a8e063;
+    cursor: pointer;
+    flex: 1;
+    text-align: center;
+    font-family: inherit;
+}
+
+.update-banner-text:hover {
+    text-decoration: underline;
+}
+
+.update-banner-dismiss {
+    background: transparent;
+    border: none;
+    color: #a8e063;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 2px;
+    line-height: 1;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.update-banner-dismiss:hover {
+    opacity: 1;
+}
+
+/* ── Settings version row ──────────────────────────────────── */
+.settings-version-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.settings-version-label {
+    font-size: 11px;
+    color: #555570;
+    font-family: inherit;
+}
+
+.settings-update-link {
+    font-size: 11px;
+    color: #a8e063;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.settings-update-link:hover {
+    text-decoration: underline;
+}
+
+body.theme-light .update-banner {
+    background: #e8f5c8;
+}
+
+body.theme-light .update-banner-text,
+body.theme-light .update-banner-dismiss {
+    color: #4a7a00;
+}
+
+body.theme-light .settings-version-label {
+    color: #aaaacc;
+}
+
+body.theme-light .settings-update-link {
+    color: #4a7a00;
+}
+
+/* ── Settings select dropdowns ─────────────────────────────── */
+.settings-select {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    color: #e0e0f0;
+    font-size: 11px;
+    padding: 3px 6px;
+    cursor: pointer;
+    outline: none;
+    font-family: inherit;
+}
+
+.settings-select:hover {
+    border-color: rgba(255,255,255,0.3);
+}
+
+body.theme-light .settings-select {
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.15);
+    color: #303050;
 }

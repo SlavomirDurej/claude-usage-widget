@@ -34,6 +34,12 @@
                 </div>
             </div>
 
+            <!-- Update Banner (hidden by default) -->
+            <div class="update-banner" id="updateBanner" style="display: none;">
+                <span class="update-banner-text" id="updateBannerText"></span>
+                <button class="update-banner-dismiss" id="updateBannerDismiss" title="Dismiss">✕</button>
+            </div>
+
             <!-- Loading State -->
             <div class="loading-container" id="loadingContainer">
                 <div class="spinner"></div>
@@ -233,9 +239,32 @@
                                 </label>
                             </div>
                         </div>
+
+                        <!-- Row 5: time format -->
+                        <div class="settings-row">
+                            <span class="settings-row-label">Time format</span>
+                            <select id="timeFormat" class="settings-select">
+                                <option value="12h">12h (3:59 PM)</option>
+                                <option value="24h">24h (15:59)</option>
+                            </select>
+                        </div>
+
+                        <!-- Row 6: weekly date format -->
+                        <div class="settings-row">
+                            <span class="settings-row-label">Date format</span>
+                            <select id="weeklyDateFormat" class="settings-select">
+                                <option value="date">Mar 13</option>
+                                <option value="date-day">Fri Mar 13</option>
+                                <option value="date-day-time">Fri Mar 13 + time</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div class="settings-footer">
+                        <div class="settings-version-row">
+                            <span class="settings-version-label" id="settingsVersionLabel">v1.5.0</span>
+                            <span class="settings-update-link" id="settingsUpdateLink" style="display: none;"></span>
+                        </div>
                         <button class="logout-btn" id="logoutBtn">Log Out</button>
                         <button class="coffee-btn" id="coffeeBtn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"

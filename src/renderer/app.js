@@ -63,7 +63,15 @@ const elements = {
     alwaysOnTopToggle: document.getElementById('alwaysOnTopToggle'),
     warnThreshold: document.getElementById('warnThreshold'),
     dangerThreshold: document.getElementById('dangerThreshold'),
-    themeBtns: document.querySelectorAll('.theme-btn')
+    themeBtns: document.querySelectorAll('.theme-btn'),
+    timeFormat: document.getElementById('timeFormat'),
+    weeklyDateFormat: document.getElementById('weeklyDateFormat'),
+
+    updateBanner: document.getElementById('updateBanner'),
+    updateBannerText: document.getElementById('updateBannerText'),
+    updateBannerDismiss: document.getElementById('updateBannerDismiss'),
+    settingsVersionLabel: document.getElementById('settingsVersionLabel'),
+    settingsUpdateLink: document.getElementById('settingsUpdateLink')
 };
 
 // Initialize
@@ -73,6 +81,7 @@ async function init() {
 
     // Apply saved theme and load thresholds immediately
     const settings = await window.electronAPI.getSettings();
+    window._cachedSettings = settings;
     applyTheme(settings.theme);
     if (window.electronAPI.platform === 'darwin') {
         document.getElementById('trayLabel').textContent = 'Hide from Dock';
@@ -87,6 +96,13 @@ async function init() {
     } else {
         showLoginRequired();
     }
+
+    // Populate version label then check for updates after a short delay
+    const version = await window.electronAPI.getAppVersion();
+    if (elements.settingsVersionLabel) {
+        elements.settingsVersionLabel.textContent = `v${version}`;
+    }
+    setTimeout(checkForUpdate, 2000);
 }
 
 // Event Listeners
@@ -147,7 +163,7 @@ function setupEventListeners() {
     elements.settingsBtn.addEventListener('click', async () => {
         await loadSettings();
         elements.settingsOverlay.style.display = 'flex';
-        window.electronAPI.resizeWindow(260);
+        window.electronAPI.resizeWindow(320);
     });
 
     elements.closeSettingsBtn.addEventListener('click', async () => {
@@ -186,6 +202,18 @@ function setupEventListeners() {
         debugLog('Session expired event received');
         credentials = { sessionKey: null, organizationId: null };
         showLoginRequired();
+    });
+
+    // Update banner
+    elements.updateBannerDismiss.addEventListener('click', () => {
+        elements.updateBanner.style.display = 'none';
+        resizeWidget();
+    });
+    elements.updateBannerText.addEventListener('click', () => {
+        window.electronAPI.openExternal(`https://github.com/SlavomirDurej/claude-usage-widget/releases/latest`);
+    });
+    elements.settingsUpdateLink.addEventListener('click', () => {
+        window.electronAPI.openExternal(`https://github.com/SlavomirDurej/claude-usage-widget/releases/latest`);
     });
 }
 
@@ -321,50 +349,55 @@ function buildExtraRows(data) {
         const resetsAt = value.resets_at;
         const colorClass = config.color;
 
-        let percentageHTML;
-        let timerHTML;
-
-        if (key === 'extra_usage') {
-            // Percentage area → spending amounts
-            if (value.used_cents != null && value.limit_cents != null) {
-                const usedDollars = (value.used_cents / 100).toFixed(0);
-                const limitDollars = (value.limit_cents / 100).toFixed(0);
-                percentageHTML = `<span class="usage-percentage extra-spending">$${usedDollars}/$${limitDollars}</span>`;
-            } else {
-                percentageHTML = `<span class="usage-percentage">${Math.round(utilization)}%</span>`;
-            }
-            // Timer area → prepaid balance
-            if (value.balance_cents != null) {
-                const balanceDollars = (value.balance_cents / 100).toFixed(0);
-                timerHTML = `<span class="timer-text extra-balance">Bal $${balanceDollars}</span>`;
-            } else {
-                timerHTML = `<span class="timer-text"></span>`;
-            }
-        } else {
-            percentageHTML = `<span class="usage-percentage">${Math.round(utilization)}%</span>`;
-            const totalMinutes = key.includes('seven_day') ? 7 * 24 * 60 : 5 * 60;
-            timerHTML = `<div class="timer-text" data-resets="${resetsAt || ''}" data-total="${totalMinutes}">--:--</div>`;
-        }
-
         const row = document.createElement('div');
         row.className = 'usage-section';
-        row.innerHTML = `
-            <span class="usage-label">${config.label}</span>
-            <div class="usage-bar-group">
-                <div class="progress-bar">
-                    <div class="progress-fill ${colorClass}" style="width: ${Math.min(utilization, 100)}%"></div>
+
+        if (key === 'extra_usage') {
+            // Extra usage: bar col shows $used/$limit, elapsed col empty, timer col shows balance
+            const barHTML = value.used_cents != null && value.limit_cents != null
+                ? `<div class="usage-bar-group">
+                    <div class="progress-bar">
+                        <div class="progress-fill ${colorClass}" style="width: ${Math.min(utilization, 100)}%"></div>
+                    </div>
+                    <span class="usage-percentage extra-spending">$${(value.used_cents/100).toFixed(0)}/$${(value.limit_cents/100).toFixed(0)}</span>
+                   </div>`
+                : `<div class="usage-bar-group">
+                    <div class="progress-bar">
+                        <div class="progress-fill ${colorClass}" style="width: ${Math.min(utilization, 100)}%"></div>
+                    </div>
+                    <span class="usage-percentage">${Math.round(utilization)}%</span>
+                   </div>`;
+            const balanceHTML = value.balance_cents != null
+                ? `<span class="timer-text extra-balance">Bal $${(value.balance_cents/100).toFixed(0)}</span>`
+                : `<span class="timer-text"></span>`;
+            row.innerHTML = `
+                <span class="usage-label">${config.label}</span>
+                ${barHTML}
+                <div class="usage-elapsed-group"></div>
+                ${balanceHTML}
+                <span class="resets-at-text"></span>
+            `;
+        } else {
+            const totalMinutes = key.includes('seven_day') ? 7 * 24 * 60 : 5 * 60;
+            row.innerHTML = `
+                <span class="usage-label">${config.label}</span>
+                <div class="usage-bar-group">
+                    <div class="progress-bar">
+                        <div class="progress-fill ${colorClass}" style="width: ${Math.min(utilization, 100)}%"></div>
+                    </div>
+                    <span class="usage-percentage">${Math.round(utilization)}%</span>
                 </div>
-                ${percentageHTML}
-            </div>
-            <div class="usage-timer-group">
-                <svg class="mini-timer" width="24" height="24" viewBox="0 0 24 24">
-                    <circle class="timer-bg" cx="12" cy="12" r="10" />
-                    <circle class="timer-progress ${colorClass}" cx="12" cy="12" r="10"
-                        style="stroke-dasharray: 63; stroke-dashoffset: 63" />
-                </svg>
-                ${timerHTML}
-            </div>
-        `;
+                <div class="usage-elapsed-group">
+                    <svg class="mini-timer" width="24" height="24" viewBox="0 0 24 24">
+                        <circle class="timer-bg" cx="12" cy="12" r="10" />
+                        <circle class="timer-progress ${colorClass}" cx="12" cy="12" r="10"
+                            style="stroke-dasharray: 63; stroke-dashoffset: 63" />
+                    </svg>
+                </div>
+                <div class="timer-text" data-resets="${resetsAt || ''}" data-total="${totalMinutes}">--:--</div>
+                <span class="resets-at-text"></span>
+            `;
+        }
 
         // Apply warning/danger classes
         const progressEl = row.querySelector('.progress-fill');
@@ -400,13 +433,20 @@ function refreshExtraTimers() {
     });
 }
 
-function resizeWidget() {
+const BANNER_HEIGHT = 28;
+const EXPAND_OVERHEAD = 28; // margin-top(12) + padding-top(6) + bottom buffer(10)
+
+function resizeWidget(bannerVisible) {
+    const hasBanner = bannerVisible !== undefined
+        ? bannerVisible
+        : elements.updateBanner.style.display !== 'none';
+    const bannerOffset = hasBanner ? BANNER_HEIGHT : 0;
     const extraCount = elements.extraRows.children.length;
     if (isExpanded && extraCount > 0) {
-        const expandedHeight = WIDGET_HEIGHT_COLLAPSED + 12 + (extraCount * WIDGET_ROW_HEIGHT);
+        const expandedHeight = WIDGET_HEIGHT_COLLAPSED + EXPAND_OVERHEAD + (extraCount * WIDGET_ROW_HEIGHT) + bannerOffset;
         window.electronAPI.resizeWindow(expandedHeight);
     } else {
-        window.electronAPI.resizeWindow(WIDGET_HEIGHT_COLLAPSED);
+        window.electronAPI.resizeWindow(WIDGET_HEIGHT_COLLAPSED + bannerOffset);
     }
 }
 
@@ -432,6 +472,10 @@ let weeklyResetTriggered = false;
 
 function refreshTimers() {
     if (!latestUsageData) return;
+
+    const settings = window._cachedSettings || {};
+    const timeFormat = settings.timeFormat || '12h';
+    const weeklyDateFormat = settings.weeklyDateFormat || 'date';
 
     // Session data
     const sessionUtilization = latestUsageData.five_hour?.utilization || 0;
@@ -464,7 +508,7 @@ function refreshTimers() {
         sessionResetsAt,
         5 * 60 // 5 hours in minutes
     );
-    elements.sessionResetsAt.textContent = formatResetsAt(sessionResetsAt, false);
+    elements.sessionResetsAt.textContent = formatResetsAt(sessionResetsAt, false, timeFormat, weeklyDateFormat);
     elements.sessionResetsAt.style.opacity = sessionResetsAt ? '1' : '0.4';
 
     // Weekly data
@@ -498,7 +542,7 @@ function refreshTimers() {
         weeklyResetsAt,
         7 * 24 * 60 // 7 days in minutes
     );
-    elements.weeklyResetsAt.textContent = formatResetsAt(weeklyResetsAt, true);
+    elements.weeklyResetsAt.textContent = formatResetsAt(weeklyResetsAt, true, timeFormat, weeklyDateFormat);
     elements.weeklyResetsAt.style.opacity = weeklyResetsAt ? '1' : '0.4';
 }
 
@@ -526,21 +570,36 @@ function updateProgressBar(progressElement, percentageElement, value, isWeekly =
 }
 
 // Format reset date for the "Resets At" column
-// Session: shows time like "10:00 PM"
-// Weekly: shows date like "Feb 28"
-function formatResetsAt(resetsAt, isWeekly) {
+// Session: shows time like "3:59 PM" or "15:59"
+// Weekly: shows date like "Mar 13", "Fri Mar 13", or "Fri Mar 13 3:59 PM"
+function formatResetsAt(resetsAt, isWeekly, timeFormat, weeklyDateFormat) {
     if (!resetsAt) return '—';
     const date = new Date(resetsAt);
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    const formatTime = (d) => {
+        if (timeFormat === '24h') {
+            return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        } else {
+            let hours = d.getHours();
+            const minutes = d.getMinutes().toString().padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12 || 12;
+            return `${hours}:${minutes} ${ampm}`;
+        }
+    };
+
     if (isWeekly) {
-        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        const day = date.getDate();
-        return `${months[date.getMonth()]} ${day}`;
+        const dayStr = days[date.getDay()];
+        const monthStr = months[date.getMonth()];
+        const dayNum = date.getDate();
+        const fmt = weeklyDateFormat || 'date';
+        if (fmt === 'date-day') return `${dayStr} ${monthStr} ${dayNum}`;
+        if (fmt === 'date-day-time') return `${dayStr} ${monthStr} ${dayNum} ${formatTime(date)}`;
+        return `${monthStr} ${dayNum}`; // default: 'date'
     } else {
-        let hours = date.getHours();
-        const minutes = date.getMinutes().toString().padStart(2, '0');
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        hours = hours % 12 || 12;
-        return `${hours}:${minutes} ${ampm}`;
+        return formatTime(date);
     }
 }
 
@@ -674,6 +733,8 @@ async function loadSettings() {
     elements.alwaysOnTopToggle.checked = settings.alwaysOnTop;
     elements.warnThreshold.value = settings.warnThreshold;
     elements.dangerThreshold.value = settings.dangerThreshold;
+    elements.timeFormat.value = settings.timeFormat || '12h';
+    elements.weeklyDateFormat.value = settings.weeklyDateFormat || 'date';
 
     warnThreshold = settings.warnThreshold;
     dangerThreshold = settings.dangerThreshold;
@@ -702,13 +763,19 @@ async function saveSettings() {
         alwaysOnTop: elements.alwaysOnTopToggle.checked,
         theme: activeThemeBtn ? activeThemeBtn.dataset.theme : 'dark',
         warnThreshold: warn,
-        dangerThreshold: danger
+        dangerThreshold: danger,
+        timeFormat: elements.timeFormat.value || '12h',
+        weeklyDateFormat: elements.weeklyDateFormat.value || 'date'
     };
     await window.electronAPI.saveSettings(settings);
+    window._cachedSettings = settings;
     applyTheme(settings.theme);
     if (window.electronAPI.platform === 'darwin') {
         document.getElementById('trayLabel').textContent = 'Hide from Dock';
     }
+
+    // Re-render resets-at values immediately with new format
+    if (latestUsageData) refreshTimers();
 }
 
 function applyTheme(theme) {
@@ -717,10 +784,33 @@ function applyTheme(theme) {
     document.body.classList.toggle('theme-light', !useDark);
 }
 
+// Update check
+async function checkForUpdate() {
+    try {
+        const result = await window.electronAPI.checkForUpdate();
+        if (!result.hasUpdate) return;
+
+        const version = result.version;
+
+        // Show banner and expand window to compensate
+        elements.updateBannerText.textContent = `▲  Version ${version} available — click to download`;
+        elements.updateBanner.style.display = 'flex';
+        resizeWidget(true);
+
+        // Populate settings panel link if already visible
+        if (elements.settingsUpdateLink) {
+            elements.settingsUpdateLink.textContent = `→ v${version} available`;
+            elements.settingsUpdateLink.style.display = 'inline';
+        }
+
+        debugLog(`Update available: v${version}`);
+    } catch (e) {
+        debugLog('Update check failed silently', e);
+    }
+}
+
 // Start the application
 init();
-
-// Cleanup on unload
 window.addEventListener('beforeunload', () => {
     stopAutoUpdate();
     if (countdownInterval) clearInterval(countdownInterval);
