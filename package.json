@@ -42,14 +42,14 @@
       "icon": "assets/icon.ico"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
+      "artifactName": "${productName}-${version}-win-portable.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "artifactName": "${productName}-${version}-win-Setup.${ext}"
     },
     "files": [
       "**/*",
@@ -69,7 +69,7 @@
       "icon": "assets/icon.icns"
     },
     "dmg": {
-      "artifactName": "${productName}-${version}-${arch}.dmg"
+      "artifactName": "${productName}-${version}-macOS-${arch}.dmg"
     }
   }
 }
