@@ -1,6 +1,6 @@
 # Claude Usage Widget
 
-A beautiful, standalone desktop widget for **Windows and macOS** that displays your Claude.ai usage statistics in real-time.
+A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that displays your Claude.ai usage statistics in real-time.
 
 ![Claude Usage Widget - Main](assets/screenshot-main.png)
 
@@ -23,6 +23,17 @@ A beautiful, standalone desktop widget for **Windows and macOS** that displays y
 ---
 
 ## What's New
+
+### v1.5.2
+
+#### 🐧 Linux Support
+The widget now builds and runs natively on Linux. Pre-built **AppImage** packages are available for x64 and arm64 — no installation required, just download, make executable, and run.
+
+- Tested on Zorin OS (Ubuntu-based); compatible with most modern Linux distributions
+- System tray integration via X11/XDG
+- Note: **Launch at startup** is not yet supported on Linux (Electron limitation)
+
+---
 
 ### v1.5.1
 
@@ -112,6 +123,13 @@ A full settings overlay with persistent preferences via electron-store.
 > ```
 > Then try launching the app again.
 
+**Linux:**
+1. Download the latest `Claude-Usage-Widget-{version}-linux-x64.AppImage` (Intel/AMD) or `Claude-Usage-Widget-{version}-linux-arm64.AppImage` (ARM) from [Releases](../../releases)
+2. Make it executable: `chmod +x Claude-Usage-Widget-*.AppImage`
+3. Run it: `./Claude-Usage-Widget-*.AppImage`
+
+> **Note:** AppImage runs without installation on most Linux distributions. If your distro uses AppArmor or similar sandboxing, you may need to pass `--no-sandbox` on first run.
+
 ---
 
 ### Build from Source
@@ -136,6 +154,9 @@ npm run build:win
 
 # Build for macOS (must be run on a Mac)
 npm run build:mac
+
+# Build for Linux
+npm run build:linux
 ```
 
 The installer will be created in the `dist/` folder.
@@ -196,7 +217,7 @@ Same layout and color coding as Current Session, tracking your 7-day usage windo
 
 ### Auto-start on Boot
 
-Enable the **Launch at startup** toggle in the Settings panel (⚙️ icon in the title bar). Works on both Windows and macOS.
+Enable the **Launch at startup** toggle in the Settings panel (⚙️ icon in the title bar). Works on Windows and macOS. Not currently supported on Linux.
 
 ### Custom Refresh Interval
 
@@ -289,7 +310,7 @@ DEBUG_LOG=1 npm start
 - [x] Custom warning thresholds
 - [x] Configurable date & time formats
 - [x] Update notifications
-- [ ] Linux support
+- [x] Linux support
 - [ ] Usage history graphs
 - [ ] Compact mode
 - [ ] Notification alerts at usage thresholds

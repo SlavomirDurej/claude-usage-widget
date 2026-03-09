@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-widget",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Desktop widget for Claude.ai usage monitoring",
   "main": "main.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "dev": "cross-env NODE_ENV=development electron .",
-    "build:mac": "electron-builder --mac"
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
   },
   "keywords": [
     "claude",
@@ -70,6 +71,17 @@
     },
     "dmg": {
       "artifactName": "${productName}-${version}-macOS-${arch}.dmg"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "assets/logo.png",
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     }
   }
 }

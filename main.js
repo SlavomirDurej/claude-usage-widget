@@ -55,7 +55,7 @@ function createMainWindow() {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: false,
-    icon: path.join(__dirname, process.platform === 'darwin' ? 'assets/icon.icns' : 'assets/icon.ico'),
+    icon: path.join(__dirname, process.platform === 'darwin' ? 'assets/icon.icns' : process.platform === 'linux' ? 'assets/logo.png' : 'assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -87,7 +87,7 @@ function createMainWindow() {
 
 function createTray() {
   try {
-    tray = new Tray(path.join(__dirname, process.platform === 'darwin' ? 'assets/tray-icon-mac.png' : 'assets/tray-icon.png'));
+    tray = new Tray(path.join(__dirname, process.platform === 'darwin' ? 'assets/tray-icon-mac.png' : process.platform === 'linux' ? 'assets/tray-icon-linux.png' : 'assets/tray-icon.png'));
 
     const contextMenu = Menu.buildFromTemplate([
       {
@@ -276,10 +276,14 @@ ipcMain.handle('save-settings', (event, settings) => {
   store.set('settings.timeFormat', settings.timeFormat);
   store.set('settings.weeklyDateFormat', settings.weeklyDateFormat);
 
-  app.setLoginItemSettings({
-    openAtLogin: settings.autoStart,
-    ...(process.platform !== 'darwin' && { path: app.getPath('exe') })
-  });
+  // openAtLogin is not supported on Linux — Electron silently ignores it.
+  // Skip the call entirely to avoid misleading behaviour.
+  if (process.platform !== 'linux') {
+    app.setLoginItemSettings({
+      openAtLogin: settings.autoStart,
+      ...(process.platform !== 'darwin' && { path: app.getPath('exe') })
+    });
+  }
 
   if (mainWindow) {
     if (process.platform === 'darwin') {
