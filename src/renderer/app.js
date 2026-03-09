@@ -103,6 +103,8 @@ async function init() {
         elements.settingsVersionLabel.textContent = `v${version}`;
     }
     setTimeout(checkForUpdate, 2000);
+    // Also check once every 24 hours for users who never close the app
+    setInterval(checkForUpdate, 24 * 60 * 60 * 1000);
 }
 
 // Event Listeners
@@ -497,6 +499,7 @@ function refreshTimers() {
             // Wait a few seconds for the server to update, then refresh
             setTimeout(() => {
                 fetchUsageData();
+                checkForUpdate();
             }, 3000);
         } else if (sessionDiff > 0) {
             sessionResetTriggered = false; // Reset flag when timer is active again

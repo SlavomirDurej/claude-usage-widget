@@ -24,6 +24,18 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 
 ## What's New
 
+### v1.5.3
+
+#### 🔔 Improved Update Notifications
+The widget now checks for new releases more frequently for users who keep the app running long-term:
+
+- **On session reset** — an update check runs automatically each time your 5-hour session window resets
+- **Every 24 hours** — a background check runs once daily as a fallback
+
+Previously the widget only checked for updates at startup.
+
+---
+
 ### v1.5.2
 
 #### 🐧 Linux Support
