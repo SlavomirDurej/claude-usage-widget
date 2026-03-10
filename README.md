@@ -38,7 +38,7 @@ The widget now sends native OS desktop notifications when your usage crosses con
 - Enabled by default; toggle off in Settings if not needed
 
 #### 📦 Compact Mode
-A minimal 290×105px view showing just the two progress bars — useful when screen space is tight.
+A minimal view showing just the two progress bars — useful when screen space is tight.
 
 - Collapse to compact using the **‹** chevron on the left edge of the normal view
 - Expand back to normal using the **›** chevron on the right edge of compact view
