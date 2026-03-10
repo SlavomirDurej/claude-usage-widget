@@ -433,6 +433,7 @@ body {
 /* Main Content */
 .content {
     padding: 16px 20px;
+    position: relative;
 }
 
 /* Expand Toggle */
@@ -1240,4 +1241,179 @@ body.theme-light .settings-select {
     background: rgba(0,0,0,0.05);
     border-color: rgba(0,0,0,0.15);
     color: #303050;
+}
+
+/* ── Compact Mode ──────────────────────────────────────────── */
+
+/* Collapse chevron — left edge of normal view, vertically centered */
+.compact-collapse-btn {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 36px;
+    background: rgba(255,255,255,0.04);
+    border: none;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px 0 0 10px;
+    color: #404055;
+    font-size: 9px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    padding: 0;
+    z-index: 5;
+}
+
+.compact-collapse-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: #a0a0b0;
+}
+
+/* Compact content container */
+.compact-content {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 10px 18px 10px 10px;
+    flex: 1;
+}
+
+/* Expand chevron — right edge of compact view */
+.compact-expand-btn {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 36px;
+    background: rgba(255,255,255,0.04);
+    border: none;
+    border-left: 1px solid rgba(255,255,255,0.08);
+    border-radius: 0 10px 10px 0;
+    color: #404055;
+    font-size: 9px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    padding: 0;
+    z-index: 5;
+}
+
+.compact-expand-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: #a0a0b0;
+}
+
+/* Compact rows */
+.compact-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    width: 100%;
+}
+
+.compact-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.compact-label {
+    color: #808090;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    width: 44px;
+    flex-shrink: 0;
+}
+
+.compact-bar-wrap {
+    flex: 1;
+}
+
+.compact-bar-bg {
+    position: relative;
+    height: 14px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.compact-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%);
+    border-radius: 4px;
+    transition: width 0.6s ease;
+}
+
+.compact-bar-fill.weekly {
+    background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+}
+
+.compact-bar-fill.warning {
+    background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
+}
+
+.compact-bar-fill.danger {
+    background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
+}
+
+.compact-pct {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 9px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.9);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 4px rgba(0,0,0,0.6);
+    pointer-events: none;
+}
+
+/* Compact settings overlay body */
+.compact-settings-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 14px;
+}
+
+.compact-settings-body .settings-col {
+    gap: 12px;
+}
+
+/* Light theme compact */
+body.theme-light .compact-collapse-btn,
+body.theme-light .compact-expand-btn {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(0,0,0,0.1);
+    color: #b0b0c0;
+}
+
+body.theme-light .compact-collapse-btn:hover,
+body.theme-light .compact-expand-btn:hover {
+    background: rgba(0,0,0,0.1);
+    color: #606080;
+}
+
+body.theme-light .compact-label {
+    color: #606080;
+}
+
+body.theme-light .compact-bar-bg {
+    background: rgba(0,0,0,0.08);
+}
+
+body.theme-light .compact-pct {
+    color: rgba(0,0,0,0.75);
+    text-shadow: none;
 }

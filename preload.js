@@ -41,5 +41,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
   // Notifications
-  showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body })
+  showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body }),
+
+  // Compact mode
+  setCompactMode: (compact) => ipcRenderer.send('set-compact-mode', compact)
 });

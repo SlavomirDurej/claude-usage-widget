@@ -1,0 +1,13 @@
+feat: add compact mode
+
+Adds a compact view that collapses the widget to ~290px wide showing
+two slim progress bars (Session + Weekly) with inline percentages.
+
+- Left-edge chevron in normal view collapses to compact
+- Right-edge chevron in compact view expands back to normal
+- Compact view hides timers, headers, and extra usage section
+- Settings gear in compact mode opens a minimal panel (compact toggle only)
+- Compact mode setting persisted via electron-store, restored on launch
+- Warning/danger color states applied to compact bars
+- Compact mode toggle also available in normal settings panel (Row 3)
+- New IPC: set-compact-mode resizes window width (290px compact / 530px normal)

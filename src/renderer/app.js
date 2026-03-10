@@ -4,6 +4,7 @@ let updateInterval = null;
 let countdownInterval = null;
 let latestUsageData = null;
 let isExpanded = false;
+let isCompactMode = false;
 const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const WIDGET_HEIGHT_COLLAPSED = 155;
 const WIDGET_ROW_HEIGHT = 30;
@@ -72,7 +73,18 @@ const elements = {
     updateBannerDismiss: document.getElementById('updateBannerDismiss'),
     settingsVersionLabel: document.getElementById('settingsVersionLabel'),
     settingsUpdateLink: document.getElementById('settingsUpdateLink'),
-    usageAlertsToggle: document.getElementById('usageAlertsToggle')
+    usageAlertsToggle: document.getElementById('usageAlertsToggle'),
+    compactModeToggle: document.getElementById('compactModeToggle'),
+    compactModeToggleCompact: document.getElementById('compactModeToggleCompact'),
+    compactContent: document.getElementById('compactContent'),
+    compactCollapseBtn: document.getElementById('compactCollapseBtn'),
+    compactExpandBtn: document.getElementById('compactExpandBtn'),
+    compactSessionFill: document.getElementById('compactSessionFill'),
+    compactSessionPct: document.getElementById('compactSessionPct'),
+    compactWeeklyFill: document.getElementById('compactWeeklyFill'),
+    compactWeeklyPct: document.getElementById('compactWeeklyPct'),
+    compactSettingsOverlay: document.getElementById('compactSettingsOverlay'),
+    closeCompactSettingsBtn: document.getElementById('closeCompactSettingsBtn')
 };
 
 // Initialize
@@ -89,6 +101,11 @@ async function init() {
     }
     warnThreshold = settings.warnThreshold;
     dangerThreshold = settings.dangerThreshold;
+
+    // Restore compact mode from saved settings
+    if (settings.compactMode) {
+        applyCompactMode(true);
+    }
 
     if (credentials.sessionKey && credentials.organizationId) {
         showMainContent();
@@ -162,13 +179,7 @@ function setupEventListeners() {
         resizeWidget();
     });
 
-    // Settings open/close
-    elements.settingsBtn.addEventListener('click', async () => {
-        await loadSettings();
-        elements.settingsOverlay.style.display = 'flex';
-        window.electronAPI.resizeWindow(320);
-    });
-
+    // Settings close
     elements.closeSettingsBtn.addEventListener('click', async () => {
         await saveSettings();
         elements.settingsOverlay.style.display = 'none';
@@ -217,6 +228,53 @@ function setupEventListeners() {
     });
     elements.settingsUpdateLink.addEventListener('click', () => {
         window.electronAPI.openExternal(`https://github.com/SlavomirDurej/claude-usage-widget/releases/latest`);
+    });
+
+    // Compact mode — collapse chevron (normal → compact)
+    elements.compactCollapseBtn.addEventListener('click', async () => {
+        applyCompactMode(true);
+        await _saveCompactSetting(true);
+    });
+
+    // Compact mode — expand chevron (compact → normal)
+    elements.compactExpandBtn.addEventListener('click', async () => {
+        applyCompactMode(false);
+        await _saveCompactSetting(false);
+    });
+
+    // Compact mode toggle in normal settings panel
+    elements.compactModeToggle.addEventListener('change', async () => {
+        const compact = elements.compactModeToggle.checked;
+        applyCompactMode(compact);
+        await _saveCompactSetting(compact);
+    });
+
+    // Compact mode toggle in compact settings panel
+    elements.compactModeToggleCompact.addEventListener('change', async () => {
+        const compact = elements.compactModeToggleCompact.checked;
+        applyCompactMode(compact);
+        await _saveCompactSetting(compact);
+        // Close compact settings if turning off
+        if (!compact) {
+            elements.compactSettingsOverlay.style.display = 'none';
+        }
+    });
+
+    // Settings button — open compact settings if in compact mode, full settings otherwise
+    elements.settingsBtn.addEventListener('click', async () => {
+        if (isCompactMode) {
+            elements.compactModeToggleCompact.checked = isCompactMode;
+            elements.compactSettingsOverlay.style.display = 'flex';
+        } else {
+            await loadSettings();
+            elements.settingsOverlay.style.display = 'flex';
+            window.electronAPI.resizeWindow(320);
+        }
+    });
+
+    // Close compact settings
+    elements.closeCompactSettingsBtn.addEventListener('click', () => {
+        elements.compactSettingsOverlay.style.display = 'none';
     });
 }
 
@@ -475,6 +533,9 @@ function updateUI(data) {
     resizeWidget();
     startCountdown();
 
+    // Update compact bars in parallel if compact mode is active
+    if (isCompactMode) updateCompactBars(data);
+
     // On first load, seed alert flags so we don't fire for thresholds
     // the user can already see when the app starts
     if (isFirstDataLoad) {
@@ -539,7 +600,52 @@ function checkUsageAlerts(data) {
     }
 }
 
-// Track if we've already triggered a refresh for expired timers
+// Apply or remove compact mode — switches view, resizes window, syncs all toggles
+function applyCompactMode(compact) {
+    isCompactMode = compact;
+
+    // Show/hide the correct content view
+    elements.mainContent.style.display = compact ? 'none' : 'block';
+    elements.compactContent.style.display = compact ? 'flex' : 'none';
+
+    // Tell main process to resize the window width
+    window.electronAPI.setCompactMode(compact);
+
+    // Sync both settings toggles
+    if (elements.compactModeToggle) elements.compactModeToggle.checked = compact;
+    if (elements.compactModeToggleCompact) elements.compactModeToggleCompact.checked = compact;
+
+    // Update compact bars if we have data
+    if (compact && latestUsageData) updateCompactBars(latestUsageData);
+}
+
+// Update the compact mode progress bars
+function updateCompactBars(data) {
+    const sessionPct = Math.min(Math.max(data.five_hour?.utilization || 0, 0), 100);
+    const weeklyPct = Math.min(Math.max(data.seven_day?.utilization || 0, 0), 100);
+
+    elements.compactSessionFill.style.width = `${sessionPct}%`;
+    elements.compactSessionPct.textContent = `${Math.round(sessionPct)}%`;
+    elements.compactWeeklyFill.style.width = `${weeklyPct}%`;
+    elements.compactWeeklyPct.textContent = `${Math.round(weeklyPct)}%`;
+
+    // Apply warning/danger classes to compact bars
+    elements.compactSessionFill.className = 'compact-bar-fill';
+    if (sessionPct >= dangerThreshold) elements.compactSessionFill.classList.add('danger');
+    else if (sessionPct >= warnThreshold) elements.compactSessionFill.classList.add('warning');
+
+    elements.compactWeeklyFill.className = 'compact-bar-fill weekly';
+    if (weeklyPct >= dangerThreshold) elements.compactWeeklyFill.classList.add('danger');
+    else if (weeklyPct >= warnThreshold) elements.compactWeeklyFill.classList.add('warning');
+}
+// Persist compact mode setting without touching the rest of settings
+async function _saveCompactSetting(compact) {
+    const settings = window._cachedSettings || await window.electronAPI.getSettings();
+    settings.compactMode = compact;
+    window._cachedSettings = settings;
+    await window.electronAPI.saveSettings(settings);
+}
+
 let sessionResetTriggered = false;
 let weeklyResetTriggered = false;
 let isFirstDataLoad = true; // used to seed alert flags on startup
@@ -844,6 +950,7 @@ async function loadSettings() {
     elements.timeFormat.value = settings.timeFormat || '12h';
     elements.weeklyDateFormat.value = settings.weeklyDateFormat || 'date';
     elements.usageAlertsToggle.checked = settings.usageAlerts !== false;
+    if (elements.compactModeToggle) elements.compactModeToggle.checked = !!settings.compactMode;
 
     warnThreshold = settings.warnThreshold;
     dangerThreshold = settings.dangerThreshold;
@@ -875,7 +982,8 @@ async function saveSettings() {
         dangerThreshold: danger,
         timeFormat: elements.timeFormat.value || '12h',
         weeklyDateFormat: elements.weeklyDateFormat.value || 'date',
-        usageAlerts: elements.usageAlertsToggle.checked
+        usageAlerts: elements.usageAlertsToggle.checked,
+        compactMode: isCompactMode
     };
     await window.electronAPI.saveSettings(settings);
     window._cachedSettings = settings;

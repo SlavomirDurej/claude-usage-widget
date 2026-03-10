@@ -260,6 +260,16 @@ ipcMain.on('show-notification', (event, { title, body }) => {
   }
 });
 
+// Resize window for compact vs normal mode
+// Compact: 290px wide, normal: 530px wide. Height stays managed by renderer.
+ipcMain.on('set-compact-mode', (event, compact) => {
+  if (mainWindow) {
+    const width = compact ? 290 : WIDGET_WIDTH;
+    const bounds = mainWindow.getBounds();
+    mainWindow.setBounds({ x: bounds.x, y: bounds.y, width, height: bounds.height });
+  }
+});
+
 // Settings handlers
 ipcMain.handle('get-settings', () => {
   return {
@@ -271,7 +281,8 @@ ipcMain.handle('get-settings', () => {
     dangerThreshold: store.get('settings.dangerThreshold', 90),
     timeFormat: store.get('settings.timeFormat', '12h'),
     weeklyDateFormat: store.get('settings.weeklyDateFormat', 'date'),
-    usageAlerts: store.get('settings.usageAlerts', true)
+    usageAlerts: store.get('settings.usageAlerts', true),
+    compactMode: store.get('settings.compactMode', false)
   };
 });
 
@@ -285,6 +296,7 @@ ipcMain.handle('save-settings', (event, settings) => {
   store.set('settings.timeFormat', settings.timeFormat);
   store.set('settings.weeklyDateFormat', settings.weeklyDateFormat);
   store.set('settings.usageAlerts', settings.usageAlerts);
+  store.set('settings.compactMode', settings.compactMode);
 
   // openAtLogin is not supported on Linux — Electron silently ignores it.
   // Skip the call entirely to avoid misleading behaviour.

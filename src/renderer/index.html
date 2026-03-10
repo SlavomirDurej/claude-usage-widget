@@ -105,6 +105,9 @@
             <!-- Main Content -->
             <div class="content" id="mainContent" style="display: none;">
 
+                <!-- Compact toggle chevron — left edge, collapses to compact mode -->
+                <button class="compact-collapse-btn" id="compactCollapseBtn" title="Compact mode">&#9664;</button>
+
                 <!-- Column Headers -->
                 <div class="usage-headers">
                     <span></span>
@@ -168,7 +171,33 @@
 
             </div>
 
-            <!-- Settings Overlay -->
+            <!-- Compact Content -->
+            <div class="compact-content" id="compactContent" style="display: none;">
+                <!-- Expand chevron — right edge, returns to normal mode -->
+                <button class="compact-expand-btn" id="compactExpandBtn" title="Normal mode">&#9654;</button>
+                <div class="compact-rows">
+                    <div class="compact-row">
+                        <span class="compact-label">Session</span>
+                        <div class="compact-bar-wrap">
+                            <div class="compact-bar-bg">
+                                <div class="compact-bar-fill" id="compactSessionFill" style="width: 0%"></div>
+                                <span class="compact-pct" id="compactSessionPct">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="compact-row">
+                        <span class="compact-label">Weekly</span>
+                        <div class="compact-bar-wrap">
+                            <div class="compact-bar-bg">
+                                <div class="compact-bar-fill weekly" id="compactWeeklyFill" style="width: 0%"></div>
+                                <span class="compact-pct" id="compactWeeklyPct">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Overlay (normal mode) -->
             <div class="settings-overlay" id="settingsOverlay" style="display: none;">
                 <div class="settings-content">
                     <div class="settings-header">
@@ -214,6 +243,20 @@
                                     <input type="checkbox" id="usageAlertsToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
+                            </div>
+                        </div>
+
+                        <!-- Row 3: compact mode -->
+                        <div class="settings-row-2col">
+                            <div class="settings-col">
+                                <span class="settings-row-label">Compact mode</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="compactModeToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-col">
+                                <!-- placeholder -->
                             </div>
                         </div>
 
@@ -284,6 +327,25 @@
                     </div>
                 </div>
             </div>
+            <!-- Compact Settings Overlay (shown only in compact mode) -->
+            <div class="settings-overlay compact-settings-overlay" id="compactSettingsOverlay" style="display: none;">
+                <div class="settings-content">
+                    <div class="settings-header">
+                        <span class="settings-title">Settings</span>
+                        <button class="done-settings-btn" id="closeCompactSettingsBtn" title="Done">Done</button>
+                    </div>
+                    <div class="compact-settings-body">
+                        <div class="settings-col">
+                            <span class="settings-row-label">Compact mode</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="compactModeToggleCompact">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
