@@ -43,7 +43,8 @@
       "icon": "assets/icon.ico"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-win-portable.${ext}"
+      "artifactName": "${productName}-${version}-win-portable.${ext}",
+      "unpackDirName": "claude-usage-widget"
     },
     "nsis": {
       "oneClick": false,

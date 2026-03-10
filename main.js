@@ -26,6 +26,15 @@ let tray = null;
 const WIDGET_WIDTH = 530;
 const WIDGET_HEIGHT = 155;
 
+// Force portable builds to use %APPDATA% so config persists in the same
+// location as the installer version. Without this, portable stores userData
+// next to the exe and loses settings between runs.
+if (process.env.PORTABLE_EXECUTABLE_DIR) {
+  app.setPath('userData', require('path').join(
+    require('os').homedir(), 'AppData', 'Roaming', 'claude-usage-widget'
+  ));
+}
+
 // Set session-level User-Agent to avoid Electron detection
 app.on('ready', () => {
   session.defaultSession.setUserAgent(CHROME_USER_AGENT);
