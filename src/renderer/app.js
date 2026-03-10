@@ -474,6 +474,14 @@ function updateUI(data) {
     if (isExpanded) refreshExtraTimers();
     resizeWidget();
     startCountdown();
+
+    // On first load, seed alert flags so we don't fire for thresholds
+    // the user can already see when the app starts
+    if (isFirstDataLoad) {
+        isFirstDataLoad = false;
+        seedAlertFlags(data);
+    }
+
     checkUsageAlerts(data);
 }
 
@@ -534,16 +542,40 @@ function checkUsageAlerts(data) {
 // Track if we've already triggered a refresh for expired timers
 let sessionResetTriggered = false;
 let weeklyResetTriggered = false;
+let isFirstDataLoad = true; // used to seed alert flags on startup
 
 // Track which usage alert thresholds have already fired this window
 // Prevents repeat notifications on every refresh cycle
 // Keys: 'session_warn', 'session_danger', 'weekly_warn', 'weekly_danger'
+// Seeded on startup so thresholds already exceeded at launch don't fire immediately
 const alertFired = {
     session_warn: false,
     session_danger: false,
     weekly_warn: false,
     weekly_danger: false
 };
+
+// Seed alertFired flags based on current utilization at startup.
+// Any threshold already exceeded when the app launches is treated as already fired,
+// so the user doesn't get a notification for something they can already see.
+function seedAlertFlags(data) {
+    const sessionPct = data.five_hour?.utilization || 0;
+    const weeklyPct = data.seven_day?.utilization || 0;
+
+    if (sessionPct >= dangerThreshold) {
+        alertFired.session_danger = true;
+        alertFired.session_warn = true;
+    } else if (sessionPct >= warnThreshold) {
+        alertFired.session_warn = true;
+    }
+
+    if (weeklyPct >= dangerThreshold) {
+        alertFired.weekly_danger = true;
+        alertFired.weekly_warn = true;
+    } else if (weeklyPct >= warnThreshold) {
+        alertFired.weekly_warn = true;
+    }
+}
 
 function refreshTimers() {
     if (!latestUsageData) return;
