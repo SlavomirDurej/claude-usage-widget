@@ -23,7 +23,7 @@ const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit
 let mainWindow = null;
 let tray = null;
 
-const WIDGET_WIDTH = 560;
+const WIDGET_WIDTH = process.platform === 'darwin' ? 590 : 560;
 const WIDGET_HEIGHT = 155;
 const HISTORY_RETENTION_DAYS = 30;
 const CHART_DAYS = 7;

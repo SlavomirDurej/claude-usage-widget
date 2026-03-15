@@ -17,8 +17,9 @@
     "widget",
     "electron"
   ],
-  "author": "Your Name",
+  "author": "Slavomir Durej",
   "license": "MIT",
+  "copyright": "Copyright © 2025 Slavomir Durej",
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
@@ -35,6 +36,7 @@
   "build": {
     "appId": "com.claudeusage.widget",
     "productName": "Claude-Usage-Widget",
+    "copyright": "Copyright © 2025 Slavomir Durej",
     "publish": null,
     "win": {
       "target": [
