@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <script src="../../node_modules/chart.js/dist/chart.umd.js"></script>
 </head>
 
 <body>
@@ -27,6 +28,11 @@
                             stroke-width="2">
                             <path d="M23 4v6h-6M1 20v-6h6" />
                             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                    </button>
+                    <button class="control-btn graph-btn" id="graphBtn" title="Toggle Usage Graph">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                         </svg>
                     </button>
                     <button class="control-btn minimize-btn" id="minimizeBtn" title="Minimise to System Tray">−</button>
@@ -169,6 +175,14 @@
                 <!-- Expandable Details -->
                 <div class="expand-section" id="expandSection" style="display: none;">
                     <div id="extraRows"></div>
+                </div>
+
+                <div class="graph-section" id="graphSection" style="display: none;">
+                    <canvas id="usageChart"></canvas>
+                </div>
+
+                <div class="status-bar" id="statusBar">
+                    <span id="refreshedAgo">Refreshed just now</span>
                 </div>
 
             </div>
