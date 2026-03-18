@@ -9,6 +9,7 @@ let usageChart = null;
 let graphVisible = false;
 let graphWasVisible = false; // preserves graph state across compact mode toggle
 let appInitializing = true;  // suppresses _saveViewState during startup restore
+let isFetching = false;       // in-flight guard — prevents overlapping fetchUsageData calls
 const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const WIDGET_HEIGHT_COLLAPSED = 155;
 const WIDGET_ROW_HEIGHT = 30;
@@ -401,12 +402,18 @@ async function handleAutoDetect() {
 async function fetchUsageData() {
     debugLog('fetchUsageData called');
 
+    if (isFetching) {
+        debugLog('Fetch already in flight — skipping');
+        return;
+    }
+
     if (!credentials.sessionKey || !credentials.organizationId) {
         debugLog('Missing credentials, showing login');
         showLoginRequired();
         return;
     }
 
+    isFetching = true;
     try {
         debugLog('Calling electronAPI.fetchUsageData...');
         const data = await window.electronAPI.fetchUsageData();
@@ -420,6 +427,8 @@ async function fetchUsageData() {
         } else {
             debugLog('Failed to fetch usage data');
         }
+    } finally {
+        isFetching = false;
     }
 }
 
@@ -994,6 +1003,8 @@ function showLoginRequired() {
         clearInterval(countdownInterval);
         countdownInterval = null;
     }
+    // Reset fetch guard so it can't get permanently stuck across login/logout
+    isFetching = false;
     // Reset alert state so a new session doesn't inherit suppressed alerts
     isFirstDataLoad = true;
     alertFired.session_warn = false;
