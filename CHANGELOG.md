@@ -40,6 +40,32 @@ Newest releases at the top. Format inspired by [Keep a Changelog](https://keepac
 
 ---
 
+## [1.7.0-beta.2] — 2026-03-18 — Pre-release
+
+Beta build for testing. Not intended for general use.
+
+### Bug Fixes
+- Stop countdown timer on logout — prevents stale timers running after session ends
+- Reset alert state on logout/relogin — new session no longer inherits suppressed alerts
+- In-flight fetch guard — overlapping refresh calls are now dropped rather than queued
+- Settings save crash fixed — undefined `refreshInterval` no longer crashes electron-store on save
+
+### macOS
+- Widget width increased to 590px — prevents date/time column clipping
+- `NSHumanReadableCopyright` corrected in About dialog
+
+### Improvements
+- Debounced window position writes on drag — reduces disk I/O
+- Debounced compact mode and view state saves
+- Settings panel layout consolidated into 2-column rows
+- Dark mode colors corrected for disclaimer, dropdowns, and version label
+
+### Build
+- App version now correctly reflects beta tag in About dialog
+- Pre-release flag set automatically based on tag name
+
+---
+
 ## [1.7.0-beta] — 2026-03-18 — Pre-release
 
 Beta build for testing. Not intended for general use.
