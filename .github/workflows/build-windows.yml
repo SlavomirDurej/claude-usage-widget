@@ -30,6 +30,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          npm pkg set version="$version"
+        shell: pwsh
+
       - name: Build Electron app (Setup + Portable)
         run: npm run build:win
         env:
