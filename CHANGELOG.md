@@ -29,11 +29,17 @@ Newest releases at the top. Format inspired by [Keep a Changelog](https://keepac
 - Widget width 590px on macOS vs 560px on Windows/Linux — prevents date/time column clipping
 - `NSHumanReadableCopyright` added to mac `extendInfo` for correct About dialog display
 
+### Security
+- Content-Security-Policy header added — renderer locked to self-only resources (code review Finding 5)
+- URL validation with allowlist — only claude.ai, github.com, and paypal.me permitted via shell.openExternal
+- Google Fonts dependency removed — Libre Baskerville bundled locally, no external network call on startup
+
 ### Optimization
 - Debounced window position writes on drag — reduces disk I/O churn
 - Debounced compact mode and view state saves — eliminates lag during compact mode transition
 - Settings panel layout consolidated into 2-column rows
 - Dark mode disclaimer, dropdown option, and version label colors corrected
+- Always-on-top re-asserted after each fetch cycle — prevents z-order drift from hidden BrowserWindow creation
 
 ### Docs
 - Updated screenshots for main view and settings panel
