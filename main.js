@@ -562,6 +562,17 @@ ipcMain.handle('fetch-usage-data', async () => {
   }
 
   storeUsageHistory(data);
+
+  // Re-assert always-on-top after hidden BrowserWindows from fetchViaWindow
+  // are destroyed — creating/destroying BrowserWindows can temporarily disrupt
+  // the main window's z-order on some OS/window manager combinations.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const alwaysOnTop = store.get('settings.alwaysOnTop', true);
+    if (alwaysOnTop) {
+      mainWindow.setAlwaysOnTop(true, 'floating');
+    }
+  }
+
   return data;
 });
 

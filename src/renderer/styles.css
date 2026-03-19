@@ -1,3 +1,18 @@
+/* Local font — Libre Baskerville (bundled, no external dependency) */
+@font-face {
+    font-family: 'Libre Baskerville';
+    font-style: normal;
+    font-weight: 400;
+    src: url('../../../assets/fonts/LibreBaskerville-Regular.ttf') format('truetype');
+}
+
+@font-face {
+    font-family: 'Libre Baskerville';
+    font-style: normal;
+    font-weight: 700;
+    src: url('../../../assets/fonts/LibreBaskerville-Bold.ttf') format('truetype');
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -48,7 +63,7 @@ body {
 .title {
     color: #e0e0e0;
     font-family: 'Libre Baskerville', serif;
-    font-size: 14px;
+    font-size: 18px;
     font-weight: 400;
     letter-spacing: 0.5px;
     display: flex;

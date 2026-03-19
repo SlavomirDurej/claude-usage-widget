@@ -1,5 +1,24 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Allowed domains for openExternal — prevents renderer from opening arbitrary URLs
+const ALLOWED_EXTERNAL_DOMAINS = [
+  'claude.ai',
+  'github.com',
+  'paypal.me'
+];
+
+function isAllowedExternalUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    return ALLOWED_EXTERNAL_DOMAINS.some(domain =>
+      parsed.hostname === domain || parsed.hostname.endsWith('.' + domain)
+    );
+  } catch {
+    return false;
+  }
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Credentials management
   getCredentials: () => ipcRenderer.invoke('get-credentials'),
@@ -28,7 +47,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // API
   fetchUsageData: () => ipcRenderer.invoke('fetch-usage-data'),
   getUsageHistory: () => ipcRenderer.invoke('get-usage-history'),
-  openExternal: (url) => ipcRenderer.send('open-external', url),
+  openExternal: (url) => {
+    if (isAllowedExternalUrl(url)) {
+      ipcRenderer.send('open-external', url);
+    } else {
+      console.warn('openExternal blocked — URL not in allowlist:', url);
+    }
+  },
 
   // Platform
   platform: process.platform,
