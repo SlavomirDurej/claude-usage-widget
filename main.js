@@ -525,7 +525,21 @@ function isNewerVersion(remote, local) {
 }
 
 ipcMain.handle('fetch-usage-data', async () => {
-  const sessionKey = store.get('sessionKey');
+  // Use the same credential retrieval logic as get-credentials
+  let sessionKey = null;
+  if (safeStorage.isEncryptionAvailable()) {
+    const encrypted = store.get('sessionKey_encrypted');
+    if (encrypted) {
+      try {
+        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
+      } catch (err) {
+        console.error('[Keychain] Failed to decrypt session key:', err.message);
+      }
+    }
+  } else {
+    sessionKey = store.get('sessionKey');
+  }
+
   const organizationId = store.get('organizationId');
 
   if (!sessionKey || !organizationId) {
