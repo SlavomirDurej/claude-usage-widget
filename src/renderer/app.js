@@ -1399,6 +1399,10 @@ async function saveSettings() {
 
     // Re-render resets-at values immediately with new format
     if (latestUsageData) refreshTimers();
+    // Redraw graph with new time format if visible
+    if (graphVisible && chart) {
+        loadChart();
+    }
     // Restart auto-update with new interval if it changed
     startAutoUpdate();
 }
