@@ -44,9 +44,12 @@ jobs:
           security default-keychain -s build.keychain
           security unlock-keychain -p "" build.keychain
           
-          # Decode and import certificate
-          echo "${{ secrets.CSC_LINK }}" | base64 --decode > certificate.p12
-          security import certificate.p12 -k build.keychain -P "${{ secrets.CSC_KEY_PASSWORD }}" -T /usr/bin/codesign -T /usr/bin/productbuild
+          # Write base64 to file, then decode
+          echo '${{ secrets.CSC_LINK }}' > certificate.b64
+          base64 --decode -i certificate.b64 -o certificate.p12
+          
+          # Import certificate
+          security import certificate.p12 -k build.keychain -P '${{ secrets.CSC_KEY_PASSWORD }}' -T /usr/bin/codesign -T /usr/bin/productbuild
           
           # Set keychain partition list
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
@@ -55,7 +58,7 @@ jobs:
           security find-identity -v -p codesigning build.keychain
           
           # Cleanup
-          rm -f certificate.p12
+          rm -f certificate.p12 certificate.b64
 
       - name: Build Electron app (DMG)
         run: npm run build:mac
