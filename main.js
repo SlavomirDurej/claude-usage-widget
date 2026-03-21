@@ -11,7 +11,6 @@ const GITHUB_REPO = 'claude-usage-widget';
 // Must happen BEFORE creating Store instance to prevent parse errors
 const fs = require('fs');
 const os = require('os');
-const path = require('path');
 
 // electron-store uses different paths per platform
 let configPath;
