@@ -39,7 +39,7 @@ Newest releases at the top. Format inspired by [Keep a Changelog](https://keepac
 - Debounced compact mode and view state saves — eliminates lag during compact mode transition
 - Settings panel layout consolidated into 2-column rows
 - Dark mode disclaimer, dropdown option, and version label colors corrected
-- Always-on-top re-asserted after each fetch cycle — prevents z-order drift from hidden BrowserWindow creation
+- Periodic always-on-top re-assertion (5-second interval) — prevents z-order loss from hidden BrowserWindows, alt-tab, window manager shortcuts, and other disruptions
 
 ### Docs
 - Updated screenshots for main view and settings panel
