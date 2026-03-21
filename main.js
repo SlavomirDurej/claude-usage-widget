@@ -7,28 +7,42 @@ const { fetchViaWindow } = require('./src/fetch-via-window');
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
 
-// Non-sensitive settings storage (no encryption needed)
-const store = new Store();
+// Migration: Handle old encrypted config files from v1.7.0 and earlier
+// Must happen BEFORE creating Store instance to prevent parse errors
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
-// Migration: Delete old encrypted config file from v1.7.0 and earlier
-// The old version used electron-store with encryption, new version uses plain storage
+// electron-store uses different paths per platform
+let configPath;
+if (process.platform === 'darwin') {
+  configPath = path.join(os.homedir(), 'Library', 'Application Support', 'claude-usage-widget', 'config.json');
+} else if (process.platform === 'win32') {
+  configPath = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'claude-usage-widget', 'config.json');
+} else {
+  // Linux
+  configPath = path.join(os.homedir(), '.config', 'claude-usage-widget', 'config.json');
+}
+
 try {
-  const fs = require('fs');
-  const configPath = store.path;
-  
   if (fs.existsSync(configPath)) {
     const rawData = fs.readFileSync(configPath, 'utf-8');
-    // Check if file looks encrypted (contains non-JSON garbage)
+    // Check if file looks encrypted (contains non-JSON garbage or doesn't start with {)
     if (rawData.includes('\u0000') || !rawData.trim().startsWith('{')) {
-      console.log('[Migration] Detected old encrypted config, deleting for fresh start');
+      console.log('[Migration] Detected old encrypted config from v1.7.0, deleting for fresh start');
       fs.unlinkSync(configPath);
-      // Store will create a fresh config file automatically
     }
   }
 } catch (err) {
-  // If migration fails, just log and continue - store will handle it
-  console.error('[Migration] Error during config migration:', err.message);
+  console.error('[Migration] Error checking config file:', err.message);
+  // If we can't read it, try to delete it
+  try {
+    if (fs.existsSync(configPath)) fs.unlinkSync(configPath);
+  } catch {}
 }
+
+// Non-sensitive settings storage (no encryption needed)
+const store = new Store();
 
 // Debug mode: set DEBUG_LOG=1 env var or pass --debug flag to see verbose logs.
 // Regular users will only see critical errors in the console.
