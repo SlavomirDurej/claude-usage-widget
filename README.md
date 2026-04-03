@@ -107,6 +107,47 @@ The Extra Usage row now displays the correct currency symbol based on your accou
 > sudo apt install libfuse2
 > ```
 
+#### Linux: Desktop Launcher & Autostart (optional)
+
+By default the AppImage runs from wherever you put it. To get a clickable icon in your app launcher (and optionally launch at login), follow these steps.
+
+**1. Place the AppImage somewhere permanent:**
+```bash
+mkdir -p ~/.local/bin
+mv Claude-Usage-Widget-*.AppImage ~/.local/bin/claude-usage-widget.AppImage
+```
+
+**2. Create a desktop entry:**
+```bash
+cat > ~/.local/share/applications/claude-usage-widget.desktop << 'EOF'
+[Desktop Entry]
+Name=Claude Usage Widget
+Comment=Monitor Claude.ai usage
+Exec=/home/YOUR_USERNAME/.local/bin/claude-usage-widget.AppImage --no-sandbox
+Icon=/home/YOUR_USERNAME/.local/bin/claude-usage-widget.AppImage
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=true
+EOF
+```
+Replace `YOUR_USERNAME` with your actual username (run `whoami` if unsure).
+
+> **Note:** The `--no-sandbox` flag is required on most Linux systems due to how Electron's Chrome sandbox interacts with AppImage. Without it, the app will silently fail to launch.
+
+**3. Register the entry:**
+```bash
+update-desktop-database ~/.local/share/applications/
+```
+
+The widget now appears in your application launcher and can be pinned to your dock/taskbar.
+
+**4. Autostart at login (optional):**
+```bash
+mkdir -p ~/.config/autostart
+cp ~/.local/share/applications/claude-usage-widget.desktop ~/.config/autostart/
+```
+
 ---
 
 ### Build from Source
