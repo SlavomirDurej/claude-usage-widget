@@ -426,6 +426,10 @@ ipcMain.handle('save-settings', (event, settings) => {
 // normally, then capture the sessionKey cookie once login completes.
 // Do NOT attempt to "fix" this back to an embedded login without verifying
 // that Claude.ai/Cloudflare no longer blocks it.
+//
+// SECURITY: Navigation is restricted to trusted domains (claude.ai and OAuth
+// providers) to prevent phishing attacks. Popup windows are blocked. Current
+// URL is displayed in the window title bar for transparency.
 ipcMain.handle('detect-session-key', async () => {
   // Clear any leftover sessionKey cookie
   try {
@@ -436,7 +440,7 @@ ipcMain.handle('detect-session-key', async () => {
     const loginWin = new BrowserWindow({
       width: 1000,
       height: 700,
-      title: 'Log in to Claude',
+      title: 'Claude Login - https://claude.ai/login',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true
@@ -444,6 +448,48 @@ ipcMain.handle('detect-session-key', async () => {
     });
 
     let resolved = false;
+
+    // Security: restrict navigation to trusted domains only
+    const allowedLoginDomains = [
+      'claude.ai',
+      'accounts.google.com',
+      'appleid.apple.com',
+      'login.microsoftonline.com'
+    ];
+
+    loginWin.webContents.on('will-navigate', (event, url) => {
+      try {
+        const hostname = new URL(url).hostname;
+        const isAllowed = allowedLoginDomains.some(domain =>
+          hostname === domain || hostname.endsWith('.' + domain)
+        );
+        if (!isAllowed) {
+          event.preventDefault();
+          console.warn('[Security] Blocked login navigation to untrusted domain:', url);
+        } else {
+          // Update title bar to show current URL (read-only)
+          loginWin.setTitle(`Claude Login - ${url}`);
+        }
+      } catch (err) {
+        event.preventDefault();
+        console.warn('[Security] Blocked login navigation with invalid URL:', url);
+      }
+    });
+
+    // Update title on OAuth redirects and in-page navigation
+    loginWin.webContents.on('did-navigate', (event, url) => {
+      loginWin.setTitle(`Claude Login - ${url}`);
+    });
+
+    loginWin.webContents.on('did-navigate-in-page', (event, url) => {
+      loginWin.setTitle(`Claude Login - ${url}`);
+    });
+
+    // Security: block popup windows from login page
+    loginWin.webContents.setWindowOpenHandler(() => {
+      console.warn('[Security] Blocked popup window attempt from login page');
+      return { action: 'deny' };
+    });
 
     // Listen for sessionKey cookie being set after login
     const onCookieChanged = (event, cookie, cause, removed) => {
