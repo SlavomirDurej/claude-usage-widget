@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage } = require('electron');
 const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
@@ -20,7 +20,8 @@ function debugLog(...args) {
 const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 let mainWindow = null;
-let tray = null;
+let sessionTray = null;  // Tray icon for Session usage
+let weeklyTray = null;   // Tray icon for Weekly usage
 
 const WIDGET_WIDTH = process.platform === 'darwin' ? 590 : 560;
 const WIDGET_HEIGHT = 155;
@@ -115,9 +116,351 @@ function createMainWindow() {
   }
 }
 
+/**
+ * Determine background color based on thresholds
+ */
+function getBackgroundColor(percent, isSession, warnThreshold, dangerThreshold) {
+  if (percent >= dangerThreshold) {
+    // Red #ef4444
+    return { r: 239, g: 68, b: 68 };
+  } else if (percent >= warnThreshold) {
+    // Amber/Orange #f59e0b
+    return { r: 245, g: 158, b: 11 };
+  } else {
+    // Default colors
+    if (isSession) {
+      // Purple #8b5cf6
+      return { r: 139, g: 92, b: 246 };
+    } else {
+      // Blue #3b82f6
+      return { r: 59, g: 130, b: 246 };
+    }
+  }
+}
+
+/**
+ * Bold 8x11 bitmap font for numbers 0-9 (2-pixel strokes for bold look)
+ * Each number is represented as an array of 11 rows, each row is 8 bits
+ */
+const BITMAP_FONT = {
+  '0': [
+    0b00111100,
+    0b01111110,
+    0b11100111,
+    0b11000011,
+    0b11000011,
+    0b11000011,
+    0b11000011,
+    0b11000011,
+    0b11100111,
+    0b01111110,
+    0b00111100
+  ],
+  '1': [
+    0b00011000,
+    0b00111000,
+    0b01111000,
+    0b00011000,
+    0b00011000,
+    0b00011000,
+    0b00011000,
+    0b00011000,
+    0b00011000,
+    0b01111110,
+    0b01111110
+  ],
+  '2': [
+    0b00111100,
+    0b01111110,
+    0b11100111,
+    0b00000011,
+    0b00000110,
+    0b00011100,
+    0b00111000,
+    0b01110000,
+    0b11100000,
+    0b11111111,
+    0b11111111
+  ],
+  '3': [
+    0b00111100,
+    0b01111110,
+    0b11100111,
+    0b00000011,
+    0b00000110,
+    0b00111100,
+    0b00000110,
+    0b00000011,
+    0b11100111,
+    0b01111110,
+    0b00111100
+  ],
+  '4': [
+    0b00000110,
+    0b00001110,
+    0b00011110,
+    0b00110110,
+    0b01100110,
+    0b11111111,
+    0b11111111,
+    0b00000110,
+    0b00000110,
+    0b00000110,
+    0b00000110
+  ],
+  '5': [
+    0b11111111,
+    0b11111111,
+    0b11000000,
+    0b11000000,
+    0b11111100,
+    0b00000110,
+    0b00000011,
+    0b00000011,
+    0b11100111,
+    0b01111110,
+    0b00111100
+  ],
+  '6': [
+    0b00111100,
+    0b01111110,
+    0b11100000,
+    0b11000000,
+    0b11111100,
+    0b11100110,
+    0b11000011,
+    0b11000011,
+    0b11100111,
+    0b01111110,
+    0b00111100
+  ],
+  '7': [
+    0b11111111,
+    0b11111111,
+    0b00000011,
+    0b00000110,
+    0b00001100,
+    0b00011000,
+    0b00110000,
+    0b00110000,
+    0b01100000,
+    0b01100000,
+    0b01100000
+  ],
+  '8': [
+    0b00111100,
+    0b01111110,
+    0b11100111,
+    0b11000011,
+    0b01111110,
+    0b00111100,
+    0b01111110,
+    0b11000011,
+    0b11100111,
+    0b01111110,
+    0b00111100
+  ],
+  '9': [
+    0b00111100,
+    0b01111110,
+    0b11100111,
+    0b11000011,
+    0b11000011,
+    0b01111111,
+    0b00111111,
+    0b00000011,
+    0b00000111,
+    0b01111110,
+    0b00111100
+  ]
+};
+
+/**
+ * Narrow 6x11 bitmap font for 3-digit numbers (100%)
+ * Bold version to match
+ */
+const BITMAP_FONT_NARROW = {
+  '0': [
+    0b011110,
+    0b111111,
+    0b110011,
+    0b110011,
+    0b110011,
+    0b110011,
+    0b110011,
+    0b110011,
+    0b110011,
+    0b111111,
+    0b011110
+  ],
+  '1': [
+    0b001100,
+    0b011100,
+    0b111100,
+    0b001100,
+    0b001100,
+    0b001100,
+    0b001100,
+    0b001100,
+    0b001100,
+    0b111111,
+    0b111111
+  ]
+};
+
+/**
+ * Draw a crisp bitmap character at position (x, y) in the buffer
+ */
+function drawChar(buffer, width, height, char, x, y, color, useNarrow = false) {
+  const bitmap = useNarrow ? BITMAP_FONT_NARROW[char] : BITMAP_FONT[char];
+  if (!bitmap) return useNarrow ? 6 : 8;
+  
+  const charWidth = useNarrow ? 6 : 8;
+  const charHeight = 11;
+  const maxCol = useNarrow ? 5 : 7;
+  
+  for (let row = 0; row < charHeight; row++) {
+    for (let col = 0; col < charWidth; col++) {
+      if (bitmap[row] & (1 << (maxCol - col))) {
+        const px = x + col;
+        const py = y + row;
+        if (px >= 0 && px < width && py >= 0 && py < height) {
+          const offset = (py * width + px) * 4;
+          buffer[offset] = color.b;
+          buffer[offset + 1] = color.g;
+          buffer[offset + 2] = color.r;
+          buffer[offset + 3] = color.a;
+        }
+      }
+    }
+  }
+  return charWidth;
+}
+
+/**
+ * Generate a single percentage badge icon with colored background and bitmap text
+ * @param {number} percent - Usage percentage (0-100)
+ * @param {object} bgColor - Background color {r, g, b}
+ * @returns {NativeImage} Generated tray icon
+ */
+function generatePercentageIcon(percent, bgColor) {
+  const width = 20;  // Back to 20x20
+  const height = 20;
+  const buffer = Buffer.alloc(width * height * 4);
+  
+  // Draw filled square background
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * 4;
+      buffer[offset] = bgColor.b;
+      buffer[offset + 1] = bgColor.g;
+      buffer[offset + 2] = bgColor.r;
+      buffer[offset + 3] = 255;
+    }
+  }
+  
+  // Draw white text
+  const percentText = Math.round(percent).toString();
+  const textColor = { r: 255, g: 255, b: 255, a: 255 };
+  
+  // Use narrow font for 3-digit numbers (100%)
+  const useNarrow = percentText.length >= 3;
+  const charWidth = useNarrow ? 6 : 8;
+  const charHeight = 11;
+  const gap = percentText.length >= 3 ? 0 : 1; // 1px gap for 1-2 digits, no gap for 100
+  const totalWidth = percentText.length * charWidth + (percentText.length - 1) * gap;
+  let startX = Math.floor((width - totalWidth) / 2);
+  const startY = Math.floor((height - charHeight) / 2);
+  
+  // Draw each digit
+  for (let i = 0; i < percentText.length; i++) {
+    drawChar(buffer, width, height, percentText[i], startX, startY, textColor, useNarrow);
+    startX += charWidth + gap;
+  }
+  
+  return nativeImage.createFromBuffer(buffer, { width, height });
+}
+
+/**
+ * Generate a Red X icon for 99-100% usage (maxed out)
+ * @returns {NativeImage} Generated red X tray icon
+ */
+function generateRedXIcon() {
+  const width = 20;
+  const height = 20;
+  const buffer = Buffer.alloc(width * height * 4);
+  
+  // Red background
+  const red = { r: 220, g: 53, b: 69 }; // #dc3545
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * 4;
+      buffer[offset] = red.b;
+      buffer[offset + 1] = red.g;
+      buffer[offset + 2] = red.r;
+      buffer[offset + 3] = 255;
+    }
+  }
+  
+  // Draw white X (2 pixel thick lines)
+  const white = { r: 255, g: 255, b: 255, a: 255 };
+  
+  // Diagonal line from top-left to bottom-right
+  for (let i = 0; i < 11; i++) {
+    const x1 = 5 + i;
+    const y1 = 5 + i;
+    // Draw 2x2 pixel for thickness
+    for (let dy = 0; dy < 2; dy++) {
+      for (let dx = 0; dx < 2; dx++) {
+        const px = x1 + dx;
+        const py = y1 + dy;
+        if (px < width && py < height) {
+          const offset = (py * width + px) * 4;
+          buffer[offset] = white.b;
+          buffer[offset + 1] = white.g;
+          buffer[offset + 2] = white.r;
+          buffer[offset + 3] = white.a;
+        }
+      }
+    }
+  }
+  
+  // Diagonal line from top-right to bottom-left
+  for (let i = 0; i < 11; i++) {
+    const x1 = 15 - i;
+    const y1 = 5 + i;
+    // Draw 2x2 pixel for thickness
+    for (let dy = 0; dy < 2; dy++) {
+      for (let dx = 0; dx < 2; dx++) {
+        const px = x1 + dx;
+        const py = y1 + dy;
+        if (px < width && py < height) {
+          const offset = (py * width + px) * 4;
+          buffer[offset] = white.b;
+          buffer[offset + 1] = white.g;
+          buffer[offset + 2] = white.r;
+          buffer[offset + 3] = white.a;
+        }
+      }
+    }
+  }
+  
+  return nativeImage.createFromBuffer(buffer, { width, height });
+}
+
+
+
 function createTray() {
   try {
-    tray = new Tray(path.join(__dirname, process.platform === 'darwin' ? 'assets/tray-icon-mac.png' : process.platform === 'linux' ? 'assets/tray-icon-linux.png' : 'assets/tray-icon.png'));
+    const staticIconPath = path.join(__dirname, process.platform === 'darwin' ? 'assets/tray-icon-mac.png' : process.platform === 'linux' ? 'assets/tray-icon-linux.png' : 'assets/tray-icon.png');
+    
+    // Create Weekly tray icon FIRST (left position, blue)
+    weeklyTray = new Tray(staticIconPath);
+    weeklyTray.setToolTip('Weekly Usage');
+    
+    // Create Session tray icon SECOND (right position, purple)
+    sessionTray = new Tray(staticIconPath);
+    sessionTray.setToolTip('Session Usage');
 
     const contextMenu = Menu.buildFromTemplate([
       {
@@ -169,10 +512,35 @@ function createTray() {
       }
     ]);
 
-    tray.setToolTip('Claude Usage Widget');
-    tray.setContextMenu(contextMenu);
+    sessionTray.setContextMenu(contextMenu);
+    weeklyTray.setContextMenu(contextMenu);
 
-    tray.on('click', () => {
+    // Click handlers - swapped order
+    weeklyTray.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+          mainWindow.hide();
+        } else {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    });
+    
+    sessionTray.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+          mainWindow.hide();
+        } else {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    });
+    
+    weeklyTray.on('click', () => {
       if (mainWindow) {
         if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
           mainWindow.hide();
@@ -187,6 +555,73 @@ function createTray() {
     console.error('Failed to create tray:', error);
   }
 }
+
+/**
+ * Update tray icons with current usage data
+ * @param {Object} usageData - Usage data object containing session and weekly percentages
+ */
+function updateTrayIcon(usageData) {
+  const showTrayStats = store.get('settings.showTrayStats', false);
+  
+  if (!showTrayStats) {
+    // Destroy both tray icons when feature is disabled
+    if (sessionTray && !sessionTray.isDestroyed()) {
+      sessionTray.destroy();
+      sessionTray = null;
+    }
+    if (weeklyTray && !weeklyTray.isDestroyed()) {
+      weeklyTray.destroy();
+      weeklyTray = null;
+    }
+    return;
+  }
+
+  // Recreate tray icons if they were destroyed
+  if (!sessionTray || sessionTray.isDestroyed() || !weeklyTray || weeklyTray.isDestroyed()) {
+    createTray();
+  }
+
+  if ((!sessionTray || sessionTray.isDestroyed()) && (!weeklyTray || weeklyTray.isDestroyed())) return;
+
+  // Get threshold settings
+  const warnThreshold = store.get('settings.warnThreshold', 75);
+  const dangerThreshold = store.get('settings.dangerThreshold', 90);
+
+  // Extract percentages from usage data
+  const sessionPercent = usageData?.five_hour?.utilization || 0;
+  const weeklyPercent = 100; // TEMP: Force 100% to see Red X icon
+
+  try {
+    // Generate Weekly icon (blue background) - LEFT position
+    let weeklyIcon;
+    if (weeklyPercent >= 99) {
+      weeklyIcon = generateRedXIcon();
+    } else {
+      const weeklyColor = getBackgroundColor(weeklyPercent, false, warnThreshold, dangerThreshold);
+      weeklyIcon = generatePercentageIcon(weeklyPercent, weeklyColor);
+    }
+    if (weeklyTray && !weeklyTray.isDestroyed()) {
+      weeklyTray.setImage(weeklyIcon);
+      weeklyTray.setToolTip(`Weekly: ${Math.round(weeklyPercent)}%`);
+    }
+    
+    // Generate Session icon (purple background) - RIGHT position
+    let sessionIcon;
+    if (sessionPercent >= 99) {
+      sessionIcon = generateRedXIcon();
+    } else {
+      const sessionColor = getBackgroundColor(sessionPercent, true, warnThreshold, dangerThreshold);
+      sessionIcon = generatePercentageIcon(sessionPercent, sessionColor);
+    }
+    if (sessionTray && !sessionTray.isDestroyed()) {
+      sessionTray.setImage(sessionIcon);
+      sessionTray.setToolTip(`Session: ${Math.round(sessionPercent)}%`);
+    }
+  } catch (error) {
+    console.error('Failed to update tray icons:', error);
+  }
+}
+
 
 // IPC Handlers
 ipcMain.handle('get-credentials', () => {
@@ -399,7 +834,8 @@ ipcMain.handle('get-settings', () => {
     compactMode: store.get('settings.compactMode', false),
     refreshInterval: store.get('settings.refreshInterval', '300'),
     graphVisible: store.get('settings.graphVisible', false),
-    expandedOpen: store.get('settings.expandedOpen', false)
+    expandedOpen: store.get('settings.expandedOpen', false),
+    showTrayStats: store.get('settings.showTrayStats', false)
   };
 });
 
@@ -417,6 +853,7 @@ ipcMain.handle('save-settings', (event, settings) => {
   store.set('settings.refreshInterval', settings.refreshInterval);
   store.set('settings.graphVisible', settings.graphVisible);
   store.set('settings.expandedOpen', settings.expandedOpen);
+  store.set('settings.showTrayStats', settings.showTrayStats);
 
   // openAtLogin is not supported on Linux — Electron silently ignores it.
   // Skip the call entirely to avoid misleading behaviour.
@@ -434,6 +871,12 @@ ipcMain.handle('save-settings', (event, settings) => {
       mainWindow.setSkipTaskbar(settings.minimizeToTray);
     }
     mainWindow.setAlwaysOnTop(settings.alwaysOnTop, 'floating');
+  }
+
+  // Refresh tray icons immediately with new threshold settings
+  const latestUsageData = store.get('latestUsageData');
+  if (latestUsageData) {
+    updateTrayIcon(latestUsageData);
   }
 
   return true;
@@ -711,6 +1154,12 @@ ipcMain.handle('fetch-usage-data', async () => {
   }
 
   storeUsageHistory(data);
+
+  // Store latest usage data for settings refresh
+  store.set('latestUsageData', data);
+
+  // Update tray icon with current usage data
+  updateTrayIcon(data);
 
   // Re-assert always-on-top after hidden BrowserWindows from fetchViaWindow
   // are destroyed — creating/destroying BrowserWindows can temporarily disrupt

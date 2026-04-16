@@ -71,6 +71,7 @@ const elements = {
     autoStartToggle: document.getElementById('autoStartToggle'),
     minimizeToTrayToggle: document.getElementById('minimizeToTrayToggle'),
     alwaysOnTopToggle: document.getElementById('alwaysOnTopToggle'),
+    showTrayStatsToggle: document.getElementById('showTrayStatsToggle'),
     warnThreshold: document.getElementById('warnThreshold'),
     dangerThreshold: document.getElementById('dangerThreshold'),
     themeBtns: document.querySelectorAll('.theme-btn'),
@@ -1419,6 +1420,7 @@ async function loadSettings() {
     elements.autoStartToggle.checked = settings.autoStart;
     elements.minimizeToTrayToggle.checked = settings.minimizeToTray;
     elements.alwaysOnTopToggle.checked = settings.alwaysOnTop;
+    elements.showTrayStatsToggle.checked = settings.showTrayStats || false;
     elements.warnThreshold.value = settings.warnThreshold;
     elements.dangerThreshold.value = settings.dangerThreshold;
     elements.timeFormat.value = settings.timeFormat || '12h';
@@ -1463,6 +1465,7 @@ async function saveSettings() {
         autoStart: elements.autoStartToggle.checked,
         minimizeToTray: elements.minimizeToTrayToggle.checked,
         alwaysOnTop: elements.alwaysOnTopToggle.checked,
+        showTrayStats: elements.showTrayStatsToggle.checked,
         theme: activeThemeBtn ? activeThemeBtn.dataset.theme : 'dark',
         warnThreshold: warn,
         dangerThreshold: danger,
