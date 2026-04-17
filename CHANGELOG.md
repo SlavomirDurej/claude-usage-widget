@@ -7,11 +7,22 @@ Newest releases at the top. Format inspired by [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+---
+
+## [1.7.2] — 2026-04-16
+
+### New Features
+- Teams organization support — users with multiple Claude organizations can select which to track in Settings
+- System tray usage indicators — dual tray icons display real-time usage percentages (Weekly left/blue, Session right/purple), with bold 8×11 bitmap font for crisp readability, Red X icon at 99-100% usage (Windows-first, macOS/Linux planned)
+
 ### Security
 - Login window navigation hardening — restricts navigation to trusted domains (claude.ai, Google, Apple, Microsoft OAuth providers), blocks popup windows from login page, displays current URL in login window title bar for transparency, prevents phishing attacks via login flow hijacking
 
-### Docs
+### Documentation
 - Linux desktop launcher and autostart instructions (contributed by sergkuzn) — added optional setup guide for creating application launcher icons and auto-start configuration on Linux systems
+
+### Bug Fixes
+- Version comparison for pre-releases — fixed update checker incorrectly treating stable versions as newer than pre-release versions, now properly implements semantic versioning
 
 ---
 
