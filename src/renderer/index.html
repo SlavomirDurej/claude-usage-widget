@@ -276,11 +276,11 @@
                                 </label>
                             </div>
                             <div class="settings-col">
-                                <!-- placeholder -->
+                                <!-- Organization selector placeholder -->
                             </div>
                         </div>
 
-                        <!-- Row 3: theme + warn thresholds -->
+                        <!-- Row 3: theme + show tray stats -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Theme</span>
@@ -289,6 +289,24 @@
                                     <button class="theme-btn" data-theme="light">Light</button>
                                     <button class="theme-btn" data-theme="system">System</button>
                                 </div>
+                            </div>
+                            <div class="settings-col">
+                                <span class="settings-row-label">Show tray stats</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="showTrayStatsToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Row 5: time format + warn thresholds -->
+                        <div class="settings-row-2col">
+                            <div class="settings-col">
+                                <span class="settings-row-label">Time format</span>
+                                <select id="timeFormat" class="settings-select">
+                                    <option value="12h">12h (3:59 PM)</option>
+                                    <option value="24h">24h (15:59)</option>
+                                </select>
                             </div>
                             <div class="settings-col">
                                 <span class="settings-row-label">Warn at</span>
@@ -307,15 +325,8 @@
                             </div>
                         </div>
 
-                        <!-- Row 5: time format + date format -->
+                        <!-- Row 6: date format + auto refresh -->
                         <div class="settings-row-2col">
-                            <div class="settings-col">
-                                <span class="settings-row-label">Time format</span>
-                                <select id="timeFormat" class="settings-select">
-                                    <option value="12h">12h (3:59 PM)</option>
-                                    <option value="24h">24h (15:59)</option>
-                                </select>
-                            </div>
                             <div class="settings-col">
                                 <span class="settings-row-label">Date format</span>
                                 <select id="weeklyDateFormat" class="settings-select">
@@ -324,10 +335,6 @@
                                     <option value="date-day-time">Fri Mar 13 + time</option>
                                 </select>
                             </div>
-                        </div>
-
-                        <!-- Row 7: refresh interval -->
-                        <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Auto-refresh</span>
                                 <select id="refreshInterval" class="settings-select">
@@ -336,6 +343,17 @@
                                     <option value="60">Every 1 min</option>
                                     <option value="120">Every 2 min</option>
                                     <option value="300" selected>Every 5 min</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Row 7: organization selector (when available) -->
+                        <div class="settings-row-2col">
+                            <div class="settings-col" id="orgSelectorCol" style="display: none;">
+                                <span class="settings-row-label">Organization</span>
+                                <select id="orgSelector" class="settings-select">
+                                    <option value="org1">My Org (Personal)</option>
+                                    <option value="org2">Acme Corp (Team)</option>
                                 </select>
                             </div>
                             <div class="settings-col">

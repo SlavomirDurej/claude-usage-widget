@@ -39,6 +39,9 @@ yarn-error.log*
 # Local dev scratch files
 msg.txt
 RELEASE_NOTES_DRAFT.md
+CLAUDE.md
+GITHUB_RELEASE_DESCRIPTION.txt
+test-version.js
 
 # Code signing credentials (NEVER COMMIT THESE)
 developer_id.key
