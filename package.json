@@ -9,7 +9,9 @@
     "build:win": "electron-builder --win",
     "dev": "cross-env NODE_ENV=development electron .",
     "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
     "claude",
@@ -28,7 +30,8 @@
     "@electron/notarize": "^3.1.1",
     "cross-env": "^7.0.3",
     "electron": "^28.3.3",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
