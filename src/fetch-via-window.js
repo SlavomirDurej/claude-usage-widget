@@ -13,17 +13,7 @@
  * fragile and OS-specific.
  */
 const { BrowserWindow } = require('electron');
-
-/**
- * Known error signatures returned when Claude.ai blocks or changes behaviour.
- * If the extracted body matches one of these patterns we throw a specific error
- * so callers can react (e.g. prompt re-login).
- */
-const BLOCKED_SIGNATURES = [
-  { pattern: 'Just a moment', error: 'CloudflareBlocked' },
-  { pattern: 'Enable JavaScript and cookies to continue', error: 'CloudflareChallenge' },
-  { pattern: '<html', error: 'UnexpectedHTML' },
-];
+const { classifyBody } = require('./body-classifier');
 
 function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
   return new Promise((resolve, reject) => {
@@ -50,20 +40,14 @@ function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
         clearTimeout(timeout);
         win.close();
 
-        // Detect known block/failure signatures before attempting JSON parse.
-        // This provides explicit errors when Claude.ai modifies their API or CSP.
-        for (const sig of BLOCKED_SIGNATURES) {
-          if (bodyText.includes(sig.pattern)) {
-            reject(new Error(`${sig.error}: ${bodyText.substring(0, 200)}`));
-            return;
-          }
-        }
-
-        try {
-          const data = JSON.parse(bodyText);
-          resolve(data);
-        } catch (parseErr) {
-          reject(new Error('InvalidJSON: ' + bodyText.substring(0, 200)));
+        const result = classifyBody(bodyText);
+        if (result.kind === 'json') {
+          resolve(result.payload);
+        } else if (result.kind === 'invalid-json') {
+          reject(new Error(`InvalidJSON: ${result.snippet}`));
+        } else {
+          // cloudflare-blocked / cloudflare-challenge / unexpected-html
+          reject(new Error(`${result.errorTag}: ${result.snippet}`));
         }
       } catch (err) {
         clearTimeout(timeout);

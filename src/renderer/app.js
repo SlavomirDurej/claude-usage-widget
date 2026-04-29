@@ -492,16 +492,7 @@ async function fetchUsageData() {
 }
 
 
-// Update UI with usage data
-// Format a cent-based amount with the correct currency symbol.
-// Known unambiguous symbols are used; everything else falls back to the
-// ISO 4217 code as a suffix so the display is always correct.
-function formatCurrency(amountCents, currencyCode) {
-  const amount = (amountCents / 100).toFixed(0);
-  const symbols = { USD: '$', EUR: '€', GBP: '£' };
-  const sym = symbols[currencyCode];
-  return sym ? `${sym}${amount}` : `${amount} ${currencyCode || 'USD'}`;
-}
+// formatCurrency is defined in format.js (loaded via <script> in index.html before this file).
 
 // Extra row label mapping for API fields
 const EXTRA_ROW_CONFIG = {

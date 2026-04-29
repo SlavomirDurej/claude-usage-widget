@@ -3,6 +3,7 @@ const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow } = require('./src/fetch-via-window');
+const { mergeUsageData } = require('./src/usage-merger');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
@@ -1143,46 +1144,15 @@ ipcMain.handle('fetch-usage-data', async () => {
     throw error;
   }
 
-  const data = usageResult.value;
+  const overage = (overageResult.status === 'fulfilled' && overageResult.value) ? overageResult.value : null;
+  const prepaid = (prepaidResult.status === 'fulfilled' && prepaidResult.value) ? prepaidResult.value : null;
 
-  // Merge overage spending data into data.extra_usage
-  if (overageResult.status === 'fulfilled' && overageResult.value) {
-    const overage = overageResult.value;
-    const limit = overage.monthly_credit_limit ?? overage.spend_limit_amount_cents;
-    const used = overage.used_credits ?? overage.balance_cents;
-    const enabled = overage.is_enabled !== undefined ? overage.is_enabled : (limit != null);
+  const data = mergeUsageData(usageResult.value, overage, prepaid);
 
-    if (enabled && typeof limit === 'number' && limit > 0 && typeof used === 'number') {
-      data.extra_usage = {
-        utilization: (used / limit) * 100,
-        resets_at: null,
-        used_cents: used,
-        limit_cents: limit,
-        is_enabled: true,
-        currency: overage.currency || 'USD',
-      };
-    } else if (!enabled) {
-      // Extra usage is off — still pass the flag so the renderer can show status
-      if (!data.extra_usage) data.extra_usage = {};
-      data.extra_usage.is_enabled = false;
-      data.extra_usage.currency = overage.currency || 'USD';
-    }
-  } else {
+  if (!overage) {
     debugLog('Overage fetch skipped or failed:', overageResult.reason?.message || 'no data');
   }
-
-  // Merge prepaid balance into data.extra_usage
-  if (prepaidResult.status === 'fulfilled' && prepaidResult.value) {
-    const prepaid = prepaidResult.value;
-    if (typeof prepaid.amount === 'number') {
-      if (!data.extra_usage) data.extra_usage = {};
-      data.extra_usage.balance_cents = prepaid.amount;
-      // Use prepaid currency if overage didn't already set one
-      if (!data.extra_usage.currency && prepaid.currency) {
-        data.extra_usage.currency = prepaid.currency;
-      }
-    }
-  } else {
+  if (!prepaid) {
     debugLog('Prepaid fetch skipped or failed:', prepaidResult.reason?.message || 'no data');
   }
 
