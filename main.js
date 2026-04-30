@@ -1125,7 +1125,7 @@ ipcMain.handle('fetch-usage-data', async () => {
   // user won't see the extra usage data anyway.
   const expandedOpen = store.get('settings.expandedOpen', false);
   const compactMode = store.get('settings.compactMode', false);
-  const shouldFetchExtended = expandedOpen || !compactMode;
+  const shouldFetchExtended = expandedOpen;
 
   const usageUrl = `https://claude.ai/api/organizations/${organizationId}/usage`;
   const overageUrl = `https://claude.ai/api/organizations/${organizationId}/overage_spend_limit`;
