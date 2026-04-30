@@ -307,6 +307,21 @@ function setupEventListeners() {
         });
     });
 
+    // Prevent accidental app hiding: bidirectional coupling between Hide from Taskbar and Show Tray Stats
+    // If user enables "Hide from Taskbar", automatically enable "Show Tray Stats" (ensures tray icon is visible)
+    elements.minimizeToTrayToggle.addEventListener('change', () => {
+        if (elements.minimizeToTrayToggle.checked && !elements.showTrayStatsToggle.checked) {
+            elements.showTrayStatsToggle.checked = true;
+        }
+    });
+
+    // If user disables "Show Tray Stats", automatically disable "Hide from Taskbar" (prevents app from being completely hidden)
+    elements.showTrayStatsToggle.addEventListener('change', () => {
+        if (!elements.showTrayStatsToggle.checked && elements.minimizeToTrayToggle.checked) {
+            elements.minimizeToTrayToggle.checked = false;
+        }
+    });
+
     // Listen for refresh requests from tray
     window.electronAPI.onRefreshUsage(async () => {
         if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
