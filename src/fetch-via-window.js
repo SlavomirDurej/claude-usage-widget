@@ -109,11 +109,8 @@ function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
  * @param {boolean} options.logTiming - Log timing information to console (default: false) - Per-request timeout in milliseconds (default: 10000)
  * @returns {Promise<Object[]>} Array of parsed JSON responses (or errors)
  */
-function fetchMultipleViaWindow(urls, { timeoutMs = 10000, logTiming = false } = {}) {
+function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
   return new Promise((resolve, reject) => {
-    const startTime = Date.now();
-    const timings = [];
-    
     const win = new BrowserWindow({
       width: 800,
       height: 600,
@@ -127,7 +124,6 @@ function fetchMultipleViaWindow(urls, { timeoutMs = 10000, logTiming = false } =
     const results = [];
     let currentIndex = 0;
     let currentTimeout = null;
-    let currentRequestStart = null;
 
     /**
      * Load the next URL in the sequence
@@ -152,8 +148,6 @@ function fetchMultipleViaWindow(urls, { timeoutMs = 10000, logTiming = false } =
       }
 
       const url = urls[currentIndex];
-      
-      currentRequestStart = Date.now();
       
       
       

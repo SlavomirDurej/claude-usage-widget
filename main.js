@@ -1146,7 +1146,7 @@ ipcMain.handle('fetch-usage-data', async () => {
   let usageResult, overageResult, prepaidResult;
   
   try {
-    const results = await fetchMultipleViaWindow(urls, { logTiming: DEBUG });
+    const results = await fetchMultipleViaWindow(urls);
     
     // Always have usage result (first in array)
     usageResult = { status: 'fulfilled', value: results[0] };
