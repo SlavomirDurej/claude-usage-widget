@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, s
 const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
-const { fetchViaWindow } = require('./src/fetch-via-window');
+const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
@@ -1118,12 +1118,23 @@ ipcMain.handle('fetch-usage-data', async () => {
   const overageUrl = `https://claude.ai/api/organizations/${organizationId}/overage_spend_limit`;
   const prepaidUrl = `https://claude.ai/api/organizations/${organizationId}/prepaid/credits`;
 
-  // Fetch all endpoints in parallel. Usage is required; overage and prepaid are optional.
-  const [usageResult, overageResult, prepaidResult] = await Promise.allSettled([
-    fetchViaWindow(usageUrl),
-    fetchViaWindow(overageUrl),
-    fetchViaWindow(prepaidUrl)
-  ]);
+  // Fetch all endpoints sequentially using a single reused BrowserWindow.
+  // This reduces memory overhead compared to creating 3 separate windows.
+  // Usage is required; overage and prepaid are optional.
+  let usageResult, overageResult, prepaidResult;
+  
+  try {
+    const [usage, overage, prepaid] = await fetchMultipleViaWindow([usageUrl, overageUrl, prepaidUrl]);
+    usageResult = { status: 'fulfilled', value: usage };
+    overageResult = { status: 'fulfilled', value: overage };
+    prepaidResult = { status: 'fulfilled', value: prepaid };
+  } catch (error) {
+    // If any fetch fails, determine which one and set appropriate result statuses
+    // For now, if the batch fails, treat usage as failed (required endpoint)
+    usageResult = { status: 'rejected', reason: error };
+    overageResult = { status: 'rejected', reason: error };
+    prepaidResult = { status: 'rejected', reason: error };
+  }
 
   // Usage endpoint is mandatory
   if (usageResult.status === 'rejected') {

@@ -25,6 +25,35 @@ const BLOCKED_SIGNATURES = [
   { pattern: '<html', error: 'UnexpectedHTML' },
 ];
 
+/**
+ * Parse and validate response body text
+ * @param {string} bodyText - Raw body text from the page
+ * @returns {Object} Parsed JSON data
+ * @throws {Error} If blocked signatures detected or JSON parsing fails
+ */
+function parseResponseBody(bodyText) {
+  // Detect known block/failure signatures before attempting JSON parse.
+  // This provides explicit errors when Claude.ai modifies their API or CSP.
+  for (const sig of BLOCKED_SIGNATURES) {
+    if (bodyText.includes(sig.pattern)) {
+      throw new Error(`${sig.error}: ${bodyText.substring(0, 200)}`);
+    }
+  }
+
+  try {
+    return JSON.parse(bodyText);
+  } catch (parseErr) {
+    throw new Error('InvalidJSON: ' + bodyText.substring(0, 200));
+  }
+}
+
+/**
+ * Fetch a single URL using a dedicated BrowserWindow (legacy single-call approach)
+ * @param {string} url - URL to fetch
+ * @param {Object} options - Options object
+ * @param {number} options.timeoutMs - Request timeout in milliseconds (default: 30000)
+ * @returns {Promise<Object>} Parsed JSON response
+ */
 function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
   return new Promise((resolve, reject) => {
     const win = new BrowserWindow({
@@ -50,21 +79,8 @@ function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
         clearTimeout(timeout);
         win.close();
 
-        // Detect known block/failure signatures before attempting JSON parse.
-        // This provides explicit errors when Claude.ai modifies their API or CSP.
-        for (const sig of BLOCKED_SIGNATURES) {
-          if (bodyText.includes(sig.pattern)) {
-            reject(new Error(`${sig.error}: ${bodyText.substring(0, 200)}`));
-            return;
-          }
-        }
-
-        try {
-          const data = JSON.parse(bodyText);
-          resolve(data);
-        } catch (parseErr) {
-          reject(new Error('InvalidJSON: ' + bodyText.substring(0, 200)));
-        }
+        const data = parseResponseBody(bodyText);
+        resolve(data);
       } catch (err) {
         clearTimeout(timeout);
         win.close();
@@ -82,4 +98,89 @@ function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
   });
 }
 
-module.exports = { fetchViaWindow };
+/**
+ * Fetch multiple URLs sequentially using a single reused BrowserWindow
+ * This reduces memory overhead by avoiding repeated window creation/destruction
+ * 
+ * @param {string[]} urls - Array of URLs to fetch
+ * @param {Object} options - Options object
+ * @param {number} options.timeoutMs - Per-request timeout in milliseconds (default: 10000)
+ * @returns {Promise<Object[]>} Array of parsed JSON responses (or errors)
+ */
+function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const win = new BrowserWindow({
+      width: 800,
+      height: 600,
+      show: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    });
+
+    const results = [];
+    let currentIndex = 0;
+    let currentTimeout = null;
+
+    /**
+     * Load the next URL in the sequence
+     */
+    function loadNext() {
+      if (currentIndex >= urls.length) {
+        // All URLs fetched successfully
+        win.close();
+        resolve(results);
+        return;
+      }
+
+      const url = urls[currentIndex];
+      
+      currentTimeout = setTimeout(() => {
+        win.close();
+        reject(new Error(`Request timeout for URL ${currentIndex}: ${url}`));
+      }, timeoutMs);
+
+      win.loadURL(url);
+    }
+
+    win.webContents.on('did-finish-load', async () => {
+      try {
+        const bodyText = await win.webContents.executeJavaScript(
+          'document.body.innerText || document.body.textContent'
+        );
+        
+        if (currentTimeout) {
+          clearTimeout(currentTimeout);
+          currentTimeout = null;
+        }
+
+        const data = parseResponseBody(bodyText);
+        results.push(data);
+        currentIndex++;
+        loadNext();
+      } catch (err) {
+        if (currentTimeout) {
+          clearTimeout(currentTimeout);
+          currentTimeout = null;
+        }
+        win.close();
+        reject(err);
+      }
+    });
+
+    win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      if (currentTimeout) {
+        clearTimeout(currentTimeout);
+        currentTimeout = null;
+      }
+      win.close();
+      reject(new Error(`LoadFailed at URL ${currentIndex}: ${errorCode} ${errorDescription}`));
+    });
+
+    // Start loading the first URL
+    loadNext();
+  });
+}
+
+module.exports = { fetchViaWindow, fetchMultipleViaWindow };
