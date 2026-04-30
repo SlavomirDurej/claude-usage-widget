@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, s
 const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
-const { fetchViaWindow } = require('./src/fetch-via-window');
+const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
@@ -483,6 +483,30 @@ function generateRedXIcon() {
 
 
 
+/**
+ * Show the main window without the double-blink artifact on Windows.
+ *
+ * On Windows, transparent + alwaysOnTop + frameless windows re-enter the DWM
+ * compositing pipeline in two steps when shown after hide(): an initial layered
+ * window render (blink 1) followed by the alwaysOnTop z-order re-assertion
+ * (blink 2). Setting opacity to 0 before show() masks those intermediate states;
+ * the window is made opaque again after the DWM has had time to settle (~3 frames).
+ * macOS and Linux do not have this issue so they just call show() directly.
+ */
+function showMainWindowClean() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (process.platform === 'win32') {
+    mainWindow.setOpacity(0);
+    mainWindow.show();
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setOpacity(1);
+    }, 50);
+  } else {
+    mainWindow.show();
+  }
+}
+
 function createTray() {
   try {
     const staticIconPath = path.join(__dirname, process.platform === 'darwin' ? 'assets/tray-icon-mac.png' : process.platform === 'linux' ? 'assets/tray-icon-linux.png' : 'assets/tray-icon.png');
@@ -500,9 +524,7 @@ function createTray() {
         label: 'Show Widget',
         click: () => {
           if (mainWindow) {
-            if (mainWindow.isMinimized()) mainWindow.restore();
-            mainWindow.show();
-            mainWindow.focus();
+            showMainWindowClean();
           } else {
             createMainWindow();
           }
@@ -549,38 +571,22 @@ function createTray() {
     weeklyTray.setContextMenu(contextMenu);
 
     // Click handlers - swapped order
-    weeklyTray.on('click', () => {
+        weeklyTray.on('click', () => {
       if (mainWindow) {
         if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
           mainWindow.hide();
         } else {
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.show();
-          mainWindow.focus();
+          showMainWindowClean();
         }
       }
     });
     
-    sessionTray.on('click', () => {
+        sessionTray.on('click', () => {
       if (mainWindow) {
         if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
           mainWindow.hide();
         } else {
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      }
-    });
-    
-    weeklyTray.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
-          mainWindow.hide();
-        } else {
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.show();
-          mainWindow.focus();
+          showMainWindowClean();
         }
       }
     });
@@ -1114,16 +1120,53 @@ ipcMain.handle('fetch-usage-data', async () => {
   // Ensure cookie is set
   await setSessionCookie(sessionKey);
 
+  // Conditional API polling: Only fetch overage/prepaid if the expand panel is open
+  // or if compact mode is disabled (normal mode). This reduces API calls when the
+  // user won't see the extra usage data anyway.
+  const expandedOpen = store.get('settings.expandedOpen', false);
+  const compactMode = store.get('settings.compactMode', false);
+  const shouldFetchExtended = expandedOpen;
+
   const usageUrl = `https://claude.ai/api/organizations/${organizationId}/usage`;
   const overageUrl = `https://claude.ai/api/organizations/${organizationId}/overage_spend_limit`;
   const prepaidUrl = `https://claude.ai/api/organizations/${organizationId}/prepaid/credits`;
 
-  // Fetch all endpoints in parallel. Usage is required; overage and prepaid are optional.
-  const [usageResult, overageResult, prepaidResult] = await Promise.allSettled([
-    fetchViaWindow(usageUrl),
-    fetchViaWindow(overageUrl),
-    fetchViaWindow(prepaidUrl)
-  ]);
+  // Build URL array based on UI state
+  const urls = [usageUrl];
+  if (shouldFetchExtended) {
+    urls.push(overageUrl, prepaidUrl);
+    debugLog('[Conditional Polling] Fetching extended data (overage + prepaid) - panel is visible');
+  } else {
+    debugLog('[Conditional Polling] Skipping extended data - panel not visible');
+  }
+
+  // Fetch endpoints sequentially using a single reused BrowserWindow.
+  // This reduces memory overhead compared to creating 3 separate windows.
+  // Usage is always required; overage and prepaid are conditional based on UI state.
+  let usageResult, overageResult, prepaidResult;
+  
+  try {
+    const results = await fetchMultipleViaWindow(urls);
+    
+    // Always have usage result (first in array)
+    usageResult = { status: 'fulfilled', value: results[0] };
+    
+    // Conditionally map overage/prepaid results
+    if (shouldFetchExtended) {
+      overageResult = { status: 'fulfilled', value: results[1] };
+      prepaidResult = { status: 'fulfilled', value: results[2] };
+    } else {
+      // Mark as skipped (not an error, just not fetched)
+      overageResult = { status: 'skipped', reason: 'UI panel not visible' };
+      prepaidResult = { status: 'skipped', reason: 'UI panel not visible' };
+    }
+  } catch (error) {
+    // If any fetch fails, determine which one and set appropriate result statuses
+    // For now, if the batch fails, treat usage as failed (required endpoint)
+    usageResult = { status: 'rejected', reason: error };
+    overageResult = { status: 'rejected', reason: error };
+    prepaidResult = { status: 'rejected', reason: error };
+  }
 
   // Usage endpoint is mandatory
   if (usageResult.status === 'rejected') {
