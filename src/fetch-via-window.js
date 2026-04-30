@@ -167,10 +167,6 @@ function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
         
         
         
-        const requestTime = Date.now() - currentRequestStart;
-        
-        timings.push(requestTime);
-        
         
         
         if (currentTimeout) {
