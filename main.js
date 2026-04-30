@@ -1120,20 +1120,46 @@ ipcMain.handle('fetch-usage-data', async () => {
   // Ensure cookie is set
   await setSessionCookie(sessionKey);
 
+  // Conditional API polling: Only fetch overage/prepaid if the expand panel is open
+  // or if compact mode is disabled (normal mode). This reduces API calls when the
+  // user won't see the extra usage data anyway.
+  const expandedOpen = store.get('settings.expandedOpen', false);
+  const compactMode = store.get('settings.compactMode', false);
+  const shouldFetchExtended = expandedOpen || !compactMode;
+
   const usageUrl = `https://claude.ai/api/organizations/${organizationId}/usage`;
   const overageUrl = `https://claude.ai/api/organizations/${organizationId}/overage_spend_limit`;
   const prepaidUrl = `https://claude.ai/api/organizations/${organizationId}/prepaid/credits`;
 
-  // Fetch all endpoints sequentially using a single reused BrowserWindow.
+  // Build URL array based on UI state
+  const urls = [usageUrl];
+  if (shouldFetchExtended) {
+    urls.push(overageUrl, prepaidUrl);
+    debugLog('[Conditional Polling] Fetching extended data (overage + prepaid) - panel is visible');
+  } else {
+    debugLog('[Conditional Polling] Skipping extended data - panel not visible');
+  }
+
+  // Fetch endpoints sequentially using a single reused BrowserWindow.
   // This reduces memory overhead compared to creating 3 separate windows.
-  // Usage is required; overage and prepaid are optional.
+  // Usage is always required; overage and prepaid are conditional based on UI state.
   let usageResult, overageResult, prepaidResult;
   
   try {
-    const [usage, overage, prepaid] = await fetchMultipleViaWindow([usageUrl, overageUrl, prepaidUrl]);
-    usageResult = { status: 'fulfilled', value: usage };
-    overageResult = { status: 'fulfilled', value: overage };
-    prepaidResult = { status: 'fulfilled', value: prepaid };
+    const results = await fetchMultipleViaWindow(urls, { logTiming: DEBUG });
+    
+    // Always have usage result (first in array)
+    usageResult = { status: 'fulfilled', value: results[0] };
+    
+    // Conditionally map overage/prepaid results
+    if (shouldFetchExtended) {
+      overageResult = { status: 'fulfilled', value: results[1] };
+      prepaidResult = { status: 'fulfilled', value: results[2] };
+    } else {
+      // Mark as skipped (not an error, just not fetched)
+      overageResult = { status: 'skipped', reason: 'UI panel not visible' };
+      prepaidResult = { status: 'skipped', reason: 'UI panel not visible' };
+    }
   } catch (error) {
     // If any fetch fails, determine which one and set appropriate result statuses
     // For now, if the batch fails, treat usage as failed (required endpoint)

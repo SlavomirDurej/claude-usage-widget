@@ -51,7 +51,8 @@ function parseResponseBody(bodyText) {
  * Fetch a single URL using a dedicated BrowserWindow (legacy single-call approach)
  * @param {string} url - URL to fetch
  * @param {Object} options - Options object
- * @param {number} options.timeoutMs - Request timeout in milliseconds (default: 30000)
+ * @param {number} options.timeoutMs
+ * @param {boolean} options.logTiming - Log timing information to console (default: false) - Request timeout in milliseconds (default: 30000)
  * @returns {Promise<Object>} Parsed JSON response
  */
 function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
@@ -104,11 +105,15 @@ function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
  * 
  * @param {string[]} urls - Array of URLs to fetch
  * @param {Object} options - Options object
- * @param {number} options.timeoutMs - Per-request timeout in milliseconds (default: 10000)
+ * @param {number} options.timeoutMs
+ * @param {boolean} options.logTiming - Log timing information to console (default: false) - Per-request timeout in milliseconds (default: 10000)
  * @returns {Promise<Object[]>} Array of parsed JSON responses (or errors)
  */
-function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
+function fetchMultipleViaWindow(urls, { timeoutMs = 10000, logTiming = false } = {}) {
   return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    const timings = [];
+    
     const win = new BrowserWindow({
       width: 800,
       height: 600,
@@ -122,6 +127,7 @@ function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
     const results = [];
     let currentIndex = 0;
     let currentTimeout = null;
+    let currentRequestStart = null;
 
     /**
      * Load the next URL in the sequence
@@ -129,12 +135,27 @@ function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
     function loadNext() {
       if (currentIndex >= urls.length) {
         // All URLs fetched successfully
+        const totalTime = Date.now() - startTime;
+        if (logTiming) {
+          console.log('\n[API Timing] Batch fetch complete');
+          console.log(`[API Timing] Total time: ${totalTime}ms for ${urls.length} requests`);
+          timings.forEach((timing, idx) => {
+            const urlName = urls[idx].includes('/usage') ? 'usage' : 
+                           urls[idx].includes('/overage') ? 'overage' : 
+                           urls[idx].includes('/prepaid') ? 'prepaid' : `request${idx}`;
+            console.log(`[API Timing]   ${urlName}: ${timing}ms`);
+          });
+        }
         win.close();
         resolve(results);
         return;
       }
 
       const url = urls[currentIndex];
+      
+      currentRequestStart = Date.now();
+      
+      
       
       currentTimeout = setTimeout(() => {
         win.close();
@@ -149,6 +170,14 @@ function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
         const bodyText = await win.webContents.executeJavaScript(
           'document.body.innerText || document.body.textContent'
         );
+        
+        
+        
+        const requestTime = Date.now() - currentRequestStart;
+        
+        timings.push(requestTime);
+        
+        
         
         if (currentTimeout) {
           clearTimeout(currentTimeout);

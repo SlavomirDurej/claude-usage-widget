@@ -269,6 +269,7 @@ function setupEventListeners() {
 
     // Expand/collapse toggle
     elements.expandToggle.addEventListener('click', () => {
+        const wasExpanded = isExpanded;
         isExpanded = !isExpanded;
         elements.expandArrow.classList.toggle('expanded', isExpanded);
         elements.expandSection.style.display = isExpanded ? 'block' : 'none';
@@ -277,6 +278,13 @@ function setupEventListeners() {
         }
         resizeWidget();
         _saveViewState();
+        
+        // Trigger immediate fetch if panel was just opened (collapsed → expanded)
+        // This ensures fresh overage/prepaid data is available when user expands the panel
+        if (!wasExpanded && isExpanded) {
+            debugLog('[Conditional Polling] Panel expanded - triggering immediate fetch');
+            fetchUsageData();
+        }
     });
 
     // Settings close
