@@ -1095,7 +1095,7 @@ function isNewerVersion(remote, local) {
   } catch { return false; }
 }
 
-ipcMain.handle('fetch-usage-data', async () => {
+ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Use the same credential retrieval logic as get-credentials
   let sessionKey = null;
   if (safeStorage.isEncryptionAvailable()) {
@@ -1123,7 +1123,8 @@ ipcMain.handle('fetch-usage-data', async () => {
   // Conditional API polling: Only fetch overage/prepaid if the expand panel is open
   // or if compact mode is disabled (normal mode). This reduces API calls when the
   // user won't see the extra usage data anyway.
-  const expandedOpen = store.get('settings.expandedOpen', false);
+  // If forceExtended is passed (e.g., when user clicks expand), use that instead of saved setting
+  const expandedOpen = options.forceExtended !== undefined ? options.forceExtended : store.get('settings.expandedOpen', false);
   const compactMode = store.get('settings.compactMode', false);
   const shouldFetchExtended = expandedOpen;
 
