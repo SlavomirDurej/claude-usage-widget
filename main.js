@@ -774,10 +774,16 @@ ipcMain.handle('validate-session-key', async (event, sessionKey) => {
 
 ipcMain.on('minimize-window', () => {
   if (mainWindow) {
-    // macOS: minimize to Dock so the user can restore via Dock click
+    // macOS: If "Hide from Dock" is enabled, hide the window instead of minimizing
+    // to avoid showing in the Dock's minimized windows section
     // Windows/Linux: hide to tray (taskbar may be hidden, tray is the restore path)
     if (process.platform === 'darwin') {
-      mainWindow.minimize();
+      const minimizeToTray = store.get('settings.minimizeToTray', false);
+      if (minimizeToTray) {
+        mainWindow.hide();
+      } else {
+        mainWindow.minimize();
+      }
     } else {
       mainWindow.hide();
     }
