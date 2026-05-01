@@ -27,7 +27,8 @@ const BLOCKED_SIGNATURES = [
 
 /**
  * Parse and validate response body text
- * @param {string} bodyText - Raw body text from the page * @returns {Object} Parsed JSON data
+ * @param {string} bodyText - Raw body text from the page
+ * @returns {Object} Parsed JSON data
  * @throws {Error} If blocked signatures detected or JSON parsing fails
  */
 function parseResponseBody(bodyText) {
@@ -58,7 +59,8 @@ function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
     const win = new BrowserWindow({
       width: 800,
       height: 600,
-      show: false,      webPreferences: {
+      show: false,
+      webPreferences: {
         nodeIntegration: false,
         contextIsolation: true
       }
@@ -89,7 +91,7 @@ function fetchViaWindow(url, { timeoutMs = 30000 } = {}) {
     win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
       clearTimeout(timeout);
       win.close();
-      reject(new Error(`LoadFailed: ${errorCode} ${errorDescription}`));
+      reject(new Error(\LoadFailed: \ \));
     });
 
     win.loadURL(url);
@@ -136,7 +138,7 @@ function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
       
       currentTimeout = setTimeout(() => {
         win.close();
-        reject(new Error(`Request timeout for URL ${currentIndex}: ${url}`));
+        reject(new Error(\Request timeout for URL \: \));
       }, timeoutMs);
 
       win.loadURL(url);
@@ -173,7 +175,7 @@ function fetchMultipleViaWindow(urls, { timeoutMs = 10000 } = {}) {
         currentTimeout = null;
       }
       win.close();
-      reject(new Error(`LoadFailed at URL ${currentIndex}: ${errorCode} ${errorDescription}`));
+      reject(new Error(\LoadFailed at URL \: \ \));
     });
 
     // Start loading the first URL

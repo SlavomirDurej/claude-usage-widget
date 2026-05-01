@@ -269,6 +269,7 @@ function setupEventListeners() {
 
     // Expand/collapse toggle
     elements.expandToggle.addEventListener('click', () => {
+        const wasExpanded = isExpanded;
         isExpanded = !isExpanded;
         elements.expandArrow.classList.toggle('expanded', isExpanded);
         elements.expandSection.style.display = isExpanded ? 'block' : 'none';
@@ -277,6 +278,13 @@ function setupEventListeners() {
         }
         resizeWidget();
         _saveViewState();
+        
+        // Trigger immediate fetch if panel was just opened (collapsed → expanded)
+        // This ensures fresh overage/prepaid data is available when user expands the panel
+        if (!wasExpanded && isExpanded) {
+            debugLog('[Conditional Polling] Panel expanded - triggering immediate fetch');
+            fetchUsageData();
+        }
     });
 
     // Settings close
@@ -305,6 +313,21 @@ function setupEventListeners() {
             btn.classList.add('active');
             applyTheme(btn.dataset.theme);
         });
+    });
+
+    // Prevent accidental app hiding: bidirectional coupling between Hide from Taskbar and Show Tray Stats
+    // If user enables "Hide from Taskbar", automatically enable "Show Tray Stats" (ensures tray icon is visible)
+    elements.minimizeToTrayToggle.addEventListener('change', () => {
+        if (elements.minimizeToTrayToggle.checked && !elements.showTrayStatsToggle.checked) {
+            elements.showTrayStatsToggle.checked = true;
+        }
+    });
+
+    // If user disables "Show Tray Stats", automatically disable "Hide from Taskbar" (prevents app from being completely hidden)
+    elements.showTrayStatsToggle.addEventListener('change', () => {
+        if (!elements.showTrayStatsToggle.checked && elements.minimizeToTrayToggle.checked) {
+            elements.minimizeToTrayToggle.checked = false;
+        }
     });
 
     // Listen for refresh requests from tray
@@ -497,7 +520,7 @@ async function fetchUsageData() {
 // Known unambiguous symbols are used; everything else falls back to the
 // ISO 4217 code as a suffix so the display is always correct.
 function formatCurrency(amountCents, currencyCode) {
-  const amount = (amountCents / 100).toFixed(0);
+  const amount = (amountCents / 100).toFixed(2);
   const symbols = { USD: '$', EUR: '€', GBP: '£' };
   const sym = symbols[currencyCode];
   return sym ? `${sym}${amount}` : `${amount} ${currencyCode || 'USD'}`;
