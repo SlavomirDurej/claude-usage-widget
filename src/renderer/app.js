@@ -1534,10 +1534,17 @@ async function checkForUpdate() {
 
         const version = result.version;
 
-        // Show banner and expand window to compensate
+        // Show banner
         elements.updateBannerText.textContent = `▲  Version ${version} available — click to download`;
         elements.updateBanner.style.display = 'flex';
-        resizeWidget(true);
+        
+        // Only resize window if settings panel is not currently open
+        // (prevents race condition that truncates settings UI)
+        const settingsOpen = elements.settingsOverlay.style.display === 'flex' || 
+                             elements.compactSettingsOverlay.style.display === 'flex';
+        if (!settingsOpen) {
+            resizeWidget(true);
+        }
 
         // Populate settings panel link if already visible
         if (elements.settingsUpdateLink) {
