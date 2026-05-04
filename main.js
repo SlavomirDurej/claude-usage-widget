@@ -508,6 +508,18 @@ function showMainWindowClean() {
 }
 
 function createTray() {
+  // Respect the tray stats setting even when createTray is called from generic refresh paths.
+  if (!store.get('settings.showTrayStats', false)) {
+    destroyTrayIcons();
+    return;
+  }
+
+  // Rebuild from a clean state if only one of the two stats tray icons survived.
+  const hasSessionTray = sessionTray && !sessionTray.isDestroyed();
+  const hasWeeklyTray = weeklyTray && !weeklyTray.isDestroyed();
+  if (hasSessionTray && hasWeeklyTray) return;
+  if (hasSessionTray || hasWeeklyTray) destroyTrayIcons();
+
   try {
     const staticIconPath = path.join(__dirname, process.platform === 'darwin' ? 'assets/tray-icon-mac.png' : process.platform === 'linux' ? 'assets/tray-icon-linux.png' : 'assets/tray-icon.png');
     
@@ -595,6 +607,37 @@ function createTray() {
   }
 }
 
+function destroyTrayIcons() {
+  // Centralized tray cleanup keeps Linux appindicator hosts from showing stale icons.
+  const trays = [sessionTray, weeklyTray];
+  sessionTray = null;
+  weeklyTray = null;
+
+  for (const tray of trays) {
+    if (!tray || tray.isDestroyed()) continue;
+
+    try {
+      tray.removeAllListeners();
+      tray.setContextMenu(null);
+      tray.setToolTip('');
+
+      // On Linux, some appindicator hosts repaint stale tray entries lazily.
+      // Clearing the image before destroy gives the host an explicit update.
+      if (process.platform === 'linux') {
+        tray.setImage(nativeImage.createEmpty());
+      }
+    } catch (error) {
+      console.error('Failed to clear tray icon:', error);
+    }
+
+    try {
+      tray.destroy();
+    } catch (error) {
+      console.error('Failed to destroy tray icon:', error);
+    }
+  }
+}
+
 /**
  * Update tray icons with current usage data
  * @param {Object} usageData - Usage data object containing session and weekly percentages
@@ -603,15 +646,7 @@ function updateTrayIcon(usageData) {
   const showTrayStats = store.get('settings.showTrayStats', false);
   
   if (!showTrayStats) {
-    // Destroy both tray icons when feature is disabled
-    if (sessionTray && !sessionTray.isDestroyed()) {
-      sessionTray.destroy();
-      sessionTray = null;
-    }
-    if (weeklyTray && !weeklyTray.isDestroyed()) {
-      weeklyTray.destroy();
-      weeklyTray = null;
-    }
+    destroyTrayIcons();
     return;
   }
 
@@ -912,10 +947,18 @@ ipcMain.handle('save-settings', (event, settings) => {
     mainWindow.setAlwaysOnTop(settings.alwaysOnTop, 'floating');
   }
 
-  // Refresh tray icons immediately with new threshold settings
-  const latestUsageData = store.get('latestUsageData');
-  if (latestUsageData) {
-    updateTrayIcon(latestUsageData);
+  if (!settings.showTrayStats) {
+    // Remove tray icons immediately when the setting is turned off from the UI.
+    destroyTrayIcons();
+  } else {
+    // Refresh tray icons immediately with new threshold settings
+    const latestUsageData = store.get('latestUsageData');
+    if (latestUsageData) {
+      updateTrayIcon(latestUsageData);
+    } else {
+      // Create empty tray icons now; the next usage refresh will draw the stats.
+      createTray();
+    }
   }
 
   return true;
@@ -1272,7 +1315,10 @@ app.whenReady().then(async () => {
   }
 
   createMainWindow();
-  createTray();
+  // Avoid creating temporary tray icons during startup when tray stats are disabled.
+  if (store.get('settings.showTrayStats', false)) {
+    createTray();
+  }
 
   // Apply persisted settings
   const minimizeToTray = store.get('settings.minimizeToTray', false);
