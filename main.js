@@ -879,7 +879,10 @@ ipcMain.handle('get-settings', () => {
 });
 
 ipcMain.handle('save-settings', (event, settings) => {
-  store.set('settings.autoStart', settings.autoStart);
+  const supportsLoginItems = process.platform !== 'linux';
+  const autoStart = supportsLoginItems ? settings.autoStart : false;
+
+  store.set('settings.autoStart', autoStart);
   store.set('settings.minimizeToTray', settings.minimizeToTray);
   store.set('settings.alwaysOnTop', settings.alwaysOnTop);
   store.set('settings.theme', settings.theme);
@@ -896,9 +899,9 @@ ipcMain.handle('save-settings', (event, settings) => {
 
   // openAtLogin is not supported on Linux — Electron silently ignores it.
   // Skip the call entirely to avoid misleading behaviour.
-  if (process.platform !== 'linux') {
+  if (supportsLoginItems) {
     app.setLoginItemSettings({
-      openAtLogin: settings.autoStart,
+      openAtLogin: autoStart,
       ...(process.platform !== 'darwin' && { path: app.getPath('exe') })
     });
   }
