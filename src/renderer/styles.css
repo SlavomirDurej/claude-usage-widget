@@ -885,6 +885,17 @@ body.theme-light .settings-disclaimer {
     flex-shrink: 0;
 }
 
+.settings-col-disabled .settings-row-label {
+    color: #787888;
+}
+
+.settings-row-hint {
+    color: #8f8fa0;
+    font-size: 10px;
+    line-height: 1.2;
+    max-width: 78px;
+}
+
 .settings-row-label {
     color: #c0c0c0;
     font-size: 11px;
@@ -989,6 +1000,15 @@ body.theme-light .settings-disclaimer {
 .toggle-switch input:checked + .toggle-slider::before {
     transform: translateX(16px);
     background: #a78bfa;
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.toggle-switch:has(input:disabled) {
+    cursor: not-allowed;
 }
 
 /* Theme Selector */

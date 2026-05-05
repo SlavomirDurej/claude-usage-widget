@@ -232,12 +232,13 @@
                     <div class="settings-rows">
                         <!-- Row 1: two toggles -->
                         <div class="settings-row-2col">
-                            <div class="settings-col">
+                            <div class="settings-col" id="autoStartCol">
                                 <span class="settings-row-label">Launch at startup</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="autoStartToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
+                                <span class="settings-row-hint" id="autoStartHint" style="display: none;">Not supported on Linux</span>
                             </div>
                             <div class="settings-col">
                                 <span class="settings-row-label" id="trayLabel">Hide from taskbar</span>
