@@ -8,9 +8,9 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 
 ## Features
 
-🎯 **Real-time Usage Tracking** — Monitor both session and weekly usage limits
-📊 **Visual Progress Bars** — Clean, gradient progress indicators with configurable warning thresholds
-⏱️ **Countdown Timers** — Circular timers showing time elapsed in the current session window
+🎯 **Real-time Usage Tracking** — Monitor both session and weekly usage limits  
+📊 **Visual Progress Bars** — Clean, gradient progress indicators with configurable warning thresholds  
+⏱️ **Countdown Timers** — Circular timers showing time elapsed in the current session window  
 🔄 **Auto-refresh** — Updates every 5 minutes automatically, with animated refresh indicator
 📈 **Usage History Graph** — Toggleable 7-day chart showing session and weekly trends over time
 🌍 **Currency Support** — Extra usage displays your account's billing currency (€, £, $)
