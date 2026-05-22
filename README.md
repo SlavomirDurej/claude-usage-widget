@@ -11,18 +11,18 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 🎯 **Real-time Usage Tracking** — Monitor both session and weekly usage limits  
 📊 **Visual Progress Bars** — Clean, gradient progress indicators with configurable warning thresholds  
 ⏱️ **Countdown Timers** — Circular timers showing time elapsed in the current session window  
-🔄 **Auto-refresh** — Updates every 5 minutes automatically, with animated refresh indicator
-📈 **Usage History Graph** — Toggleable 7-day chart showing session and weekly trends over time
-🌍 **Currency Support** — Extra usage displays your account's billing currency (€, £, $)
-🎨 **Modern UI** — Sleek, draggable widget with dark and light themes
-🔒 **Secure** — Encrypted credential storage
-📍 **Always on Top** — User-controlled, stays visible across all workspaces
-💾 **System Tray** — Minimizes to tray for easy access
-⚙️ **Settings Panel** — Persistent preferences for startup, theme, tray, thresholds, and date/time formats
-🔔 **Usage Alerts** — Desktop notifications when usage crosses configurable warn/danger thresholds
-🔔 **Update Notifications** — Automatic check for new releases on startup
-🕐 **Configurable Date & Time Formats** — 12h/24h time, and flexible weekly reset date display
-📐 **Compact Mode** — Minimal view for when you just need a quick glance
+🔄 **Auto-refresh** — Updates every 5 minutes automatically, with animated refresh indicator  
+📈 **Usage History Graph** — Toggleable 7-day chart showing session and weekly trends over time  
+🌍 **Currency Support** — Extra usage displays your account's billing currency (€, £, $)  
+🎨 **Modern UI** — Sleek, draggable widget with dark and light themes  
+🔒 **Secure** — Encrypted credential storage  
+📍 **Always on Top** — User-controlled, stays visible across all workspaces  
+💾 **System Tray** — Minimizes to tray for easy access  
+⚙️ **Settings Panel** — Persistent preferences for startup, theme, tray, thresholds, and date/time formats  
+🔔 **Usage Alerts** — Desktop notifications when usage crosses configurable warn/danger thresholds  
+🔔 **Update Notifications** — Automatic check for new releases on startup  
+🕐 **Configurable Date & Time Formats** — 12h/24h time, and flexible weekly reset date display  
+📐 **Compact Mode** — Minimal view for when you just need a quick glance  
 
 ---
 
