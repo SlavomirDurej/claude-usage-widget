@@ -9,6 +9,8 @@
     "build:win": "electron-builder --win",
     "dev": "cross-env NODE_ENV=development electron .",
     "build:mac": "electron-builder --mac",
+    "build:mac:arm64": "electron-builder --mac --arm64",
+    "build:mac:x64": "electron-builder --mac --x64",
     "build:linux": "electron-builder --linux"
   },
   "keywords": [
