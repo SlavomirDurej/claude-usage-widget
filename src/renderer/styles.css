@@ -1523,6 +1523,17 @@ body.theme-light .compact-pct {
     animation: pulse-danger 1.2s ease-in-out infinite;
 }
 
+/* ── Active account name (main widget, multi-account only) ── */
+.active-account-name {
+    font-size: 9px;
+    font-weight: 600;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 4px 12px 0;
+}
+body.theme-light .active-account-name { color: #7c3aed; }
+
 /* ── All-accounts button ───────────────────────────────────── */
 .all-accounts-btn { opacity: 0.5; }
 .all-accounts-btn.active { opacity: 1; color: #60a5fa; }
