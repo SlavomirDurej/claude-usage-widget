@@ -1648,6 +1648,11 @@ body.theme-light .multi-account-time  { color: #909090; }
     cursor: pointer; padding: 0 2px; line-height: 1; transition: color 0.15s; flex-shrink: 0;
 }
 .account-delete-btn:hover { color: #ef4444; }
+.accounts-error {
+    font-size: 10px; color: #ef4444; padding: 4px 0 2px;
+}
+body.theme-light .accounts-error { color: #dc2626; }
+
 .name-account-form { display: flex; align-items: center; gap: 5px; padding: 6px 0 4px; }
 .account-label-input {
     flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(139,92,246,0.4);

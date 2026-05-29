@@ -170,6 +170,22 @@ function resetAddBtn() {
     elements.addAccountBtn.textContent = '+ Add';
 }
 
+let _acctErrTimer = null;
+function showAccountError(msg) {
+    if (!elements.accountsList) return;
+    let err = document.getElementById('accountsError');
+    if (!err) {
+        err = document.createElement('div');
+        err.id = 'accountsError';
+        err.className = 'accounts-error';
+        elements.accountsList.parentNode.insertBefore(err, elements.accountsList.nextSibling);
+    }
+    err.textContent = msg;
+    err.style.display = 'block';
+    clearTimeout(_acctErrTimer);
+    _acctErrTimer = setTimeout(() => { err.style.display = 'none'; }, 3000);
+}
+
 async function loadAccounts() {
     if (!elements.accountsList) return;
     const meta = await window.electronAPI.getAccounts();
@@ -223,12 +239,20 @@ function renderAccounts(accounts, activeAccountId) {
             item.appendChild(switchBtn);
         }
 
-        item.appendChild(deleteBtn);
-        deleteBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            await window.electronAPI.deleteAccount(acc.id);
-            await loadAccounts();
-        });
+        if (!isActive) {
+            item.appendChild(deleteBtn);
+            deleteBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const result = await window.electronAPI.deleteAccount(acc.id);
+                if (result.ok) {
+                    await loadAccounts();
+                } else {
+                    showAccountError(result.reason === 'last'
+                        ? "Can't delete your only account"
+                        : "Can't delete this account");
+                }
+            });
+        }
 
         elements.accountsList.appendChild(item);
     });

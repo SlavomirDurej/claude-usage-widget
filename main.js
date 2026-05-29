@@ -1453,12 +1453,12 @@ ipcMain.handle('save-account', async (event, { id, label, sessionKey, organizati
 });
 
 ipcMain.handle('delete-account', async (event, id) => {
-  if (typeof id !== 'string' || !id) return false;
+  if (typeof id !== 'string' || !id) return { ok: false, reason: 'invalid' };
   const accounts = store.get('accounts', []);
-  if (accounts.length <= 1) return false;
+  if (accounts.length <= 1) return { ok: false, reason: 'last' };
+  if (store.get('activeAccountId') === id) return { ok: false, reason: 'active' };
   store.set('accounts', accounts.filter(a => a.id !== id));
-  if (store.get('activeAccountId') === id) store.delete('activeAccountId');
-  return true;
+  return { ok: true };
 });
 
 ipcMain.handle('switch-account', async (event, id) => {
