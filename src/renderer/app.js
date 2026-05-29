@@ -976,6 +976,7 @@ const BANNER_HEIGHT = 28;
 const EXPAND_OVERHEAD = 28; // margin-top(12) + padding-top(6) + bottom buffer(10)
 
 function resizeWidget(bannerVisible) {
+    if (elements.settingsOverlay && elements.settingsOverlay.style.display !== 'none') return;
     const hasBanner = bannerVisible !== undefined
         ? bannerVisible
         : elements.updateBanner.style.display !== 'none';
