@@ -191,8 +191,13 @@ async function loadAccounts() {
     const meta = await window.electronAPI.getAccounts();
     window._lastAccountMeta = meta;
     renderAccounts(meta.accounts, meta.activeAccountId);
-    if (elements.allAccountsBtn) {
-        elements.allAccountsBtn.style.display = meta.accounts.length > 1 ? 'flex' : 'none';
+    const multi = meta.accounts.length > 1;
+    if (elements.allAccountsBtn) elements.allAccountsBtn.style.display = multi ? 'flex' : 'none';
+    const nameEl = document.getElementById('activeAccountName');
+    if (nameEl) {
+        const active = meta.accounts.find(a => a.id === meta.activeAccountId);
+        nameEl.textContent = active ? active.label : '';
+        nameEl.style.display = multi && active ? 'block' : 'none';
     }
 }
 
