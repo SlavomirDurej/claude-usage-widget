@@ -195,8 +195,7 @@ async function loadAccounts() {
     const nameEl = document.getElementById('activeAccountName');
     if (nameEl) {
         const active = meta.accounts.find(a => a.id === meta.activeAccountId);
-        nameEl.textContent = active ? active.label : '';
-        nameEl.style.display = multi && active ? 'block' : 'none';
+        nameEl.textContent = multi && active ? active.label : '';
     }
 }
 
@@ -242,6 +241,8 @@ function renderAccounts(accounts, activeAccountId) {
                     // trigger resizes or close the overlay on auth errors.
                     // Data refreshes immediately when settings closes.
                     window._refreshOnSettingsClose = true;
+                } else {
+                    showAccountError('Switch failed — session may have expired');
                 }
             });
             item.appendChild(switchBtn);
@@ -332,7 +333,9 @@ function renderAllAccounts(results, meta) {
         if (result.error) {
             const errEl = document.createElement('div');
             errEl.className = 'multi-account-error';
-            errEl.textContent = 'Unavailable';
+            errEl.textContent = result.error.includes('no key') || result.error.includes('decrypt')
+                ? 'Session key missing'
+                : 'Session expired — switch to re-authenticate';
             block.appendChild(errEl);
         } else {
             const d = result.data;
