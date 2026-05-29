@@ -231,9 +231,13 @@ function renderAccounts(accounts, activeAccountId) {
             switchBtn.addEventListener('click', async () => {
                 const result = await window.electronAPI.switchAccount(acc.id);
                 if (result.success) {
-                    credentials.organizationId = result.organizationId;
+                    // Refresh full credentials so sessionKey stays in sync with main process
+                    credentials = await window.electronAPI.getCredentials();
                     await loadAccounts();
-                    await fetchUsageData();
+                    // Don't fetch here — settings overlay is open and a fetch can
+                    // trigger resizes or close the overlay on auth errors.
+                    // Data refreshes immediately when settings closes.
+                    window._refreshOnSettingsClose = true;
                 }
             });
             item.appendChild(switchBtn);
@@ -531,6 +535,10 @@ function setupEventListeners() {
             resizeWidget();
         }
         startAutoUpdate();
+        if (window._refreshOnSettingsClose) {
+            window._refreshOnSettingsClose = false;
+            fetchUsageData();
+        }
     });
 
     elements.logoutBtn.addEventListener('click', async () => {
