@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // API
-  fetchUsageData: () => ipcRenderer.invoke('fetch-usage-data'),
+  fetchUsageData: (options) => ipcRenderer.invoke('fetch-usage-data', options),
   getUsageHistory: () => ipcRenderer.invoke('get-usage-history'),
   openExternal: (url) => {
     if (isAllowedExternalUrl(url)) {
@@ -70,5 +70,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body }),
 
   // Compact mode
-  setCompactMode: (compact) => ipcRenderer.send('set-compact-mode', compact)
+  setCompactMode: (compact) => ipcRenderer.send('set-compact-mode', compact),
+
+  // Multiple accounts
+  getAccounts: () => ipcRenderer.invoke('get-accounts'),
+  saveAccount: (data) => ipcRenderer.invoke('save-account', data),
+  deleteAccount: (id) => ipcRenderer.invoke('delete-account', id),
+  switchAccount: (id) => ipcRenderer.invoke('switch-account', id),
+  fetchAllAccountsData: () => ipcRenderer.invoke('fetch-all-accounts-data')
 });

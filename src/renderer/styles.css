@@ -779,6 +779,7 @@ body.theme-light .graph-btn.active {
     flex-direction: column;
     height: 100%;
     padding: 0;
+    overflow-y: auto;
 }
 
 .settings-overlay {
@@ -848,9 +849,9 @@ body.theme-light .settings-disclaimer {
     flex: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     padding: 6px 14px;
-    gap: 10px;
+    gap: 8px;
 }
 
 .settings-row {
@@ -1521,3 +1522,118 @@ body.theme-light .compact-pct {
 .progress-fill.pulse {
     animation: pulse-danger 1.2s ease-in-out infinite;
 }
+
+/* ── All-accounts button ───────────────────────────────────── */
+.all-accounts-btn { opacity: 0.5; }
+.all-accounts-btn.active { opacity: 1; color: #60a5fa; }
+.all-accounts-btn svg { display: block; }
+
+/* ── Multi-account section ─────────────────────────────────── */
+#multiAccountSection {
+    border-top: 1px solid rgba(255,255,255,0.07);
+    padding: 6px 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.multi-account-block { display: flex; flex-direction: column; gap: 3px; }
+.multi-account-label {
+    font-size: 10px; font-weight: 600; color: #8080a0;
+    text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 1px;
+}
+.multi-account-row {
+    display: grid;
+    grid-template-columns: 48px 1fr 32px 42px;
+    align-items: center; gap: 6px; height: 20px;
+}
+.multi-account-row-label { font-size: 10px; color: #707080; text-align: right; }
+.multi-account-bar-bg {
+    height: 10px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden;
+}
+.multi-account-bar-fill {
+    height: 100%; background: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%);
+    border-radius: 4px; transition: width 0.5s ease;
+}
+.multi-account-bar-fill.weekly { background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%); }
+.multi-account-bar-fill.warning { background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%); }
+.multi-account-bar-fill.danger  { background: linear-gradient(90deg, #ef4444 0%, #f87171 100%); }
+.multi-account-pct  { font-size: 10px; font-weight: 700; color: #c0c0d8; text-align: right; font-variant-numeric: tabular-nums; }
+.multi-account-time { font-size: 10px; color: #707080; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.multi-account-loading { font-size: 11px; color: #6060a0; padding: 6px 0; text-align: center; }
+.multi-account-error { font-size: 10px; color: #ef4444; padding: 2px 0; }
+
+body.theme-light #multiAccountSection { border-top-color: rgba(0,0,0,0.08); }
+body.theme-light .multi-account-label  { color: #a0a0c0; }
+body.theme-light .multi-account-row-label { color: #909090; }
+body.theme-light .multi-account-bar-bg { background: rgba(0,0,0,0.08); }
+body.theme-light .multi-account-pct   { color: #303050; }
+body.theme-light .multi-account-time  { color: #909090; }
+
+/* ── Accounts section (settings panel) ────────────────────── */
+.accounts-section {
+    padding: 8px 14px 0;
+    border-top: 1px solid rgba(255,255,255,0.06);
+}
+.accounts-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
+}
+.accounts-title {
+    font-size: 11px; font-weight: 600; color: #8080a0;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+.add-account-btn {
+    background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.35);
+    border-radius: 5px; color: #a78bfa; font-size: 10px; font-weight: 600;
+    padding: 3px 8px; cursor: pointer; transition: background 0.15s;
+}
+.add-account-btn:hover { background: rgba(139,92,246,0.28); }
+.add-account-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.accounts-list {
+    display: flex; flex-direction: column; gap: 4px; max-height: 80px; overflow-y: auto;
+}
+.account-item {
+    display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+    border-radius: 5px; background: rgba(255,255,255,0.04); border: 1px solid transparent;
+}
+.account-item.active { border-color: rgba(139,92,246,0.35); background: rgba(139,92,246,0.1); }
+.account-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.2); flex-shrink: 0; }
+.account-item.active .account-dot { background: #a78bfa; }
+.account-label { flex: 1; font-size: 11px; color: #c0c0d8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account-item.active .account-label { color: #e0e0f8; font-weight: 600; }
+.account-active-badge { font-size: 9px; color: #a78bfa; font-weight: 700; white-space: nowrap; }
+.account-switch-btn {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 4px; color: #9090b0; font-size: 9px; padding: 2px 5px;
+    cursor: pointer; white-space: nowrap; transition: background 0.15s;
+}
+.account-switch-btn:hover { background: rgba(139,92,246,0.2); color: #a78bfa; }
+.account-delete-btn {
+    background: transparent; border: none; color: #606070; font-size: 13px;
+    cursor: pointer; padding: 0 2px; line-height: 1; transition: color 0.15s; flex-shrink: 0;
+}
+.account-delete-btn:hover { color: #ef4444; }
+.name-account-form { display: flex; align-items: center; gap: 5px; padding: 6px 0 4px; }
+.account-label-input {
+    flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(139,92,246,0.4);
+    border-radius: 5px; color: #e0e0f0; font-size: 11px; padding: 4px 7px;
+    outline: none; font-family: inherit;
+}
+.save-account-btn {
+    background: rgba(139,92,246,0.2); border: 1px solid rgba(139,92,246,0.4);
+    border-radius: 5px; color: #c4b5fd; font-size: 10px; font-weight: 600;
+    padding: 4px 8px; cursor: pointer;
+}
+.save-account-btn:hover { background: rgba(139,92,246,0.35); }
+.cancel-account-btn {
+    background: transparent; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 5px; color: #808090; font-size: 10px; padding: 4px 6px; cursor: pointer;
+}
+.cancel-account-btn:hover { color: #a0a0b0; }
+
+body.theme-light .accounts-section { border-top-color: rgba(0,0,0,0.08); }
+body.theme-light .accounts-title { color: #a0a0c0; }
+body.theme-light .account-item { background: rgba(0,0,0,0.03); }
+body.theme-light .account-item.active { background: rgba(139,92,246,0.07); border-color: rgba(139,92,246,0.25); }
+body.theme-light .account-label { color: #404060; }
+body.theme-light .account-item.active .account-label { color: #1a1a2e; }
+body.theme-light .account-label-input { background: rgba(0,0,0,0.05); border-color: rgba(139,92,246,0.35); color: #303050; }
