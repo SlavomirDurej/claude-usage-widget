@@ -541,7 +541,8 @@ function setupEventListeners() {
         startAutoUpdate();
         if (window._refreshOnSettingsClose) {
             window._refreshOnSettingsClose = false;
-            fetchUsageData();
+            await fetchUsageData();
+            if (allAccountsVisible) refreshAllAccountsData();
         }
     });
 

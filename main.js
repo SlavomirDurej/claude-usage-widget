@@ -750,21 +750,10 @@ function updateTrayIcon(usageData) {
 
 // IPC Handlers
 ipcMain.handle('get-credentials', () => {
-  let sessionKey = null;
-  // Try safeStorage first (OS keychain)
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key:', err.message);
-      }
-    }
-  } else {
-    // Fallback: plain storage (legacy or safeStorage unavailable)
-    sessionKey = store.get('sessionKey');
-  }
+  const rawEncrypted = safeStorage.isEncryptionAvailable()
+    ? store.get('sessionKey_encrypted')
+    : null;
+  const sessionKey = rawEncrypted ? decryptKey(rawEncrypted) : store.get('sessionKey');
   return {
     sessionKey,
     organizationId: store.get('organizationId')
@@ -1204,20 +1193,11 @@ function isNewerVersion(remote, local) {
 }
 
 ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
-  // Use the same credential retrieval logic as get-credentials
-  let sessionKey = null;
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key:', err.message);
-      }
-    }
-  } else {
-    sessionKey = store.get('sessionKey');
-  }
+  // Use decryptKey so plain-text keys (saved before encryption was available) still work
+  const rawEncrypted = safeStorage.isEncryptionAvailable()
+    ? store.get('sessionKey_encrypted')
+    : null;
+  const sessionKey = rawEncrypted ? decryptKey(rawEncrypted) : store.get('sessionKey');
 
   const organizationId = store.get('organizationId');
 
@@ -1483,19 +1463,10 @@ ipcMain.handle('fetch-all-accounts-data', async () => {
 // App lifecycle
 app.whenReady().then(async () => {
   // Restore session cookie if we have stored credentials
-  let sessionKey = null;
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key on startup:', err.message);
-      }
-    }
-  } else {
-    sessionKey = store.get('sessionKey');
-  }
+  const rawEncrypted = safeStorage.isEncryptionAvailable()
+    ? store.get('sessionKey_encrypted')
+    : null;
+  const sessionKey = rawEncrypted ? decryptKey(rawEncrypted) : store.get('sessionKey');
 
   if (sessionKey) {
     await setSessionCookie(sessionKey);
