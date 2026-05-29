@@ -1566,7 +1566,9 @@ body.theme-light .compact-pct {
     color: #a78bfa;
     text-transform: uppercase;
     letter-spacing: 0.6px;
-    padding: 4px 12px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 body.theme-light .active-account-name { color: #7c3aed; }
 
