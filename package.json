@@ -7,7 +7,7 @@
     "start": "electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
-    "dev": "cross-env NODE_ENV=development electron .",
+    "dev": "cross-env NODE_ENV=development electron . --remote-debugging-port=9223",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux"
   },
