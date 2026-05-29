@@ -27,6 +27,12 @@
                     <span>Claude Usage</span>
                 </div>
                 <div class="controls">
+                    <button class="control-btn all-accounts-btn" id="allAccountsBtn" title="Show all accounts" style="display:none;">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/>
+                        </svg>
+                    </button>
                     <button class="control-btn settings-btn" id="settingsBtn" title="Settings">⚙️</button>
                     <button class="control-btn refresh-btn" id="refreshBtn" title="Refresh">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -186,6 +192,8 @@
                     <canvas id="usageChart"></canvas>
                 </div>
 
+                <!-- Multi-account section: shown when "all accounts" is toggled -->
+                <div id="multiAccountSection" style="display:none;"></div>
 
             </div>
 
@@ -352,6 +360,20 @@
                             </div>
                         </div>
 
+                    </div>
+
+                    <!-- Accounts section -->
+                    <div class="accounts-section">
+                        <div class="accounts-header">
+                            <span class="accounts-title">Accounts</span>
+                            <button class="add-account-btn" id="addAccountBtn">+ Add</button>
+                        </div>
+                        <div id="accountsList" class="accounts-list"></div>
+                        <div id="nameAccountForm" class="name-account-form" style="display:none;">
+                            <input type="text" id="newAccountLabel" class="account-label-input" placeholder="Label (e.g. Work)" maxlength="30">
+                            <button id="saveNewAccountBtn" class="save-account-btn">Save</button>
+                            <button id="cancelNewAccountBtn" class="cancel-account-btn">Cancel</button>
+                        </div>
                     </div>
 
                     <div class="settings-footer">
