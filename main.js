@@ -1361,17 +1361,19 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
 
 // ── Multiple accounts ──────────────────────────────────────────────────────
 
-const encryptionAvailable = safeStorage.isEncryptionAvailable();
-
 function encryptKey(key) {
-  if (encryptionAvailable) return safeStorage.encryptString(key).toString('base64');
+  if (safeStorage.isEncryptionAvailable()) return safeStorage.encryptString(key).toString('base64');
   return key;
 }
 
 function decryptKey(enc) {
-  if (encryptionAvailable) {
+  if (!enc) return null;
+  if (safeStorage.isEncryptionAvailable()) {
     try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); }
-    catch { return null; }
+    catch {
+      // Key was stored as plain text (saved before encryption was available) — return as-is
+      return enc;
+    }
   }
   return enc;
 }
@@ -1429,7 +1431,7 @@ ipcMain.handle('switch-account', async (event, id) => {
 
   store.set('activeAccountId', id);
   store.set('organizationId', account.organizationId);
-  if (encryptionAvailable) {
+  if (safeStorage.isEncryptionAvailable()) {
     store.set('sessionKey_encrypted', account.encryptedSessionKey);
     store.delete('sessionKey');
   } else {

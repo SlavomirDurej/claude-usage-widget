@@ -237,6 +237,12 @@ function renderAccounts(accounts, activeAccountId) {
                     // Refresh full credentials so sessionKey stays in sync with main process
                     credentials = await window.electronAPI.getCredentials();
                     await loadAccounts();
+                    // If all-accounts panel is open, re-render it with updated activeAccountId
+                    // so the newly-active account moves out of the panel immediately
+                    if (allAccountsVisible && allAccountsData) {
+                        renderAllAccounts(allAccountsData, window._lastAccountMeta);
+                        resizeWidget();
+                    }
                     // Don't fetch here — settings overlay is open and a fetch can
                     // trigger resizes or close the overlay on auth errors.
                     // Data refreshes immediately when settings closes.
