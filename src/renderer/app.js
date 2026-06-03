@@ -72,10 +72,12 @@ const elements = {
     autoStartToggle: document.getElementById('autoStartToggle'),
     autoStartHint: document.getElementById('autoStartHint'),
     minimizeToTrayToggle: document.getElementById('minimizeToTrayToggle'),
+    closeToTrayToggle: document.getElementById('closeToTrayToggle'),
     alwaysOnTopToggle: document.getElementById('alwaysOnTopToggle'),
     showTrayStatsToggle: document.getElementById('showTrayStatsToggle'),
     warnThreshold: document.getElementById('warnThreshold'),
     dangerThreshold: document.getElementById('dangerThreshold'),
+    warnThresholdCol: document.getElementById('warnThresholdCol'),
     themeBtns: document.querySelectorAll('.theme-btn'),
     timeFormat: document.getElementById('timeFormat'),
     weeklyDateFormat: document.getElementById('weeklyDateFormat'),
@@ -339,6 +341,9 @@ function setupEventListeners() {
         }
     });
 
+    // Usage Alerts: only show the warn/danger thresholds when alerts are enabled
+    elements.usageAlertsToggle.addEventListener('change', updateUsageAlertsVisibility);
+
     // Listen for refresh requests from tray
     window.electronAPI.onRefreshUsage(async () => {
         if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
@@ -396,7 +401,7 @@ function setupEventListeners() {
         } else {
             await loadSettings();
             elements.settingsOverlay.style.display = 'flex';
-            window.electronAPI.resizeWindow(318); // Increased from 288 for org selector row
+            resizeForSettings();
         }
     });
 
@@ -744,6 +749,20 @@ function resizeWidget(bannerVisible) {
     const graphOffset = graphVisible ? GRAPH_HEIGHT : 0;
     const totalHeight = WIDGET_HEIGHT_COLLAPSED + expandedOffset + graphOffset + bannerOffset;
     window.electronAPI.resizeWindow(totalHeight);
+}
+
+// Size the window for the settings panel. The rows area scrolls, so we use a
+// comfortable fixed height capped to the available screen height rather than trying
+// to fit every row (which could overflow small screens).
+const SETTINGS_PREFERRED_HEIGHT = 360;
+function resizeForSettings() {
+    let height = SETTINGS_PREFERRED_HEIGHT;
+    // Leave a margin so the window never exceeds the visible screen area.
+    const avail = window.screen && window.screen.availHeight;
+    if (avail) {
+        height = Math.min(height, avail - 80);
+    }
+    window.electronAPI.resizeWindow(Math.max(280, Math.round(height)));
 }
 
 function updateUI(data) {
@@ -1467,10 +1486,16 @@ document.head.appendChild(style);
 let warnThreshold = 75;
 let dangerThreshold = 90;
 
+// Show the warn/danger thresholds only when Usage Alerts is enabled
+function updateUsageAlertsVisibility() {
+    if (!elements.warnThresholdCol) return;
+    elements.warnThresholdCol.style.visibility =
+        elements.usageAlertsToggle.checked ? 'visible' : 'hidden';
+}
+
 async function loadSettings() {
     const settings = await window.electronAPI.getSettings();
     const isLinux = window.electronAPI.platform === 'linux';
-
     elements.autoStartToggle.checked = isLinux ? false : settings.autoStart;
     elements.autoStartToggle.disabled = isLinux;
     if (elements.autoStartCol) {
@@ -1480,6 +1505,7 @@ async function loadSettings() {
         elements.autoStartHint.style.display = isLinux ? 'inline' : 'none';
     }
     elements.minimizeToTrayToggle.checked = settings.minimizeToTray;
+    if (elements.closeToTrayToggle) elements.closeToTrayToggle.checked = settings.closeToTray || false;
     elements.alwaysOnTopToggle.checked = settings.alwaysOnTop;
     elements.showTrayStatsToggle.checked = settings.showTrayStats || false;
     elements.warnThreshold.value = settings.warnThreshold;
@@ -1489,6 +1515,7 @@ async function loadSettings() {
     if (elements.refreshInterval) elements.refreshInterval.value = settings.refreshInterval || '300';
     elements.usageAlertsToggle.checked = settings.usageAlerts !== false;
     if (elements.compactModeToggle) elements.compactModeToggle.checked = !!settings.compactMode;
+    updateUsageAlertsVisibility();
 
     // Populate org selector if user has organizations
     if (credentials.organizations && credentials.organizations.length > 0) {
@@ -1525,6 +1552,7 @@ async function saveSettings() {
     const settings = {
         autoStart: window.electronAPI.platform === 'linux' ? false : elements.autoStartToggle.checked,
         minimizeToTray: elements.minimizeToTrayToggle.checked,
+        closeToTray: elements.closeToTrayToggle ? elements.closeToTrayToggle.checked : false,
         alwaysOnTop: elements.alwaysOnTopToggle.checked,
         showTrayStats: elements.showTrayStatsToggle.checked,
         theme: activeThemeBtn ? activeThemeBtn.dataset.theme : 'dark',

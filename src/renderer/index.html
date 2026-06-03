@@ -230,7 +230,8 @@
                     </div>
 
                     <div class="settings-rows">
-                        <!-- Row 1: two toggles -->
+                        <!-- ===== General ===== -->
+                        <div class="settings-section-label">General</div>
                         <div class="settings-row-2col">
                             <div class="settings-col" id="autoStartCol">
                                 <span class="settings-row-label">Launch at startup</span>
@@ -241,33 +242,13 @@
                                 <span class="settings-row-hint" id="autoStartHint" style="display: none;">Not supported on Linux</span>
                             </div>
                             <div class="settings-col">
-                                <span class="settings-row-label" id="trayLabel">Hide from taskbar</span>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="minimizeToTrayToggle">
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Row 2: two toggles -->
-                        <div class="settings-row-2col">
-                            <div class="settings-col">
                                 <span class="settings-row-label">Always on top</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="alwaysOnTopToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
-                            <div class="settings-col">
-                                <span class="settings-row-label">Usage Alerts</span>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="usageAlertsToggle">
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
                         </div>
-
-                        <!-- Row 3: compact mode -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Compact mode</span>
@@ -277,19 +258,24 @@
                                 </label>
                             </div>
                             <div class="settings-col">
-                                <!-- Organization selector placeholder -->
-                            </div>
-                        </div>
-
-                        <!-- Row 3: theme + show tray stats -->
-                        <div class="settings-row-2col">
-                            <div class="settings-col">
                                 <span class="settings-row-label">Theme</span>
                                 <div class="theme-selector">
                                     <button class="theme-btn active" data-theme="dark">Dark</button>
                                     <button class="theme-btn" data-theme="light">Light</button>
                                     <button class="theme-btn" data-theme="system">System</button>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- ===== System Tray ===== -->
+                        <div class="settings-section-label">System Tray</div>
+                        <div class="settings-row-2col">
+                            <div class="settings-col">
+                                <span class="settings-row-label" id="trayLabel">Hide from taskbar</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="minimizeToTrayToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
                             <div class="settings-col">
                                 <span class="settings-row-label">Show tray stats</span>
@@ -299,17 +285,28 @@
                                 </label>
                             </div>
                         </div>
-
-                        <!-- Row 5: time format + warn thresholds -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
-                                <span class="settings-row-label">Time format</span>
-                                <select id="timeFormat" class="settings-select">
-                                    <option value="12h">12h (3:59 PM)</option>
-                                    <option value="24h">24h (15:59)</option>
-                                </select>
+                                <span class="settings-row-label">Close to tray</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="closeToTrayToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
+                            <div class="settings-col"></div>
+                        </div>
+
+                        <!-- ===== Usage Alerts ===== -->
+                        <div class="settings-section-label">Usage Alerts</div>
+                        <div class="settings-row-2col">
                             <div class="settings-col">
+                                <span class="settings-row-label">Enable alerts</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="usageAlertsToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-col" id="warnThresholdCol">
                                 <span class="settings-row-label">Warn at</span>
                                 <div class="threshold-group">
                                     <label class="threshold-label">
@@ -326,8 +323,16 @@
                             </div>
                         </div>
 
-                        <!-- Row 6: date format + auto refresh -->
+                        <!-- ===== Display & Data ===== -->
+                        <div class="settings-section-label">Display &amp; Data</div>
                         <div class="settings-row-2col">
+                            <div class="settings-col">
+                                <span class="settings-row-label">Time format</span>
+                                <select id="timeFormat" class="settings-select">
+                                    <option value="12h">12h (3:59 PM)</option>
+                                    <option value="24h">24h (15:59)</option>
+                                </select>
+                            </div>
                             <div class="settings-col">
                                 <span class="settings-row-label">Date format</span>
                                 <select id="weeklyDateFormat" class="settings-select">
@@ -336,6 +341,8 @@
                                     <option value="date-day-time">Fri Mar 13 + time</option>
                                 </select>
                             </div>
+                        </div>
+                        <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Auto-refresh</span>
                                 <select id="refreshInterval" class="settings-select">
@@ -346,19 +353,12 @@
                                     <option value="300" selected>Every 5 min</option>
                                 </select>
                             </div>
-                        </div>
-
-                        <!-- Row 7: organization selector (when available) -->
-                        <div class="settings-row-2col">
                             <div class="settings-col" id="orgSelectorCol" style="display: none;">
                                 <span class="settings-row-label">Organization</span>
                                 <select id="orgSelector" class="settings-select">
                                     <option value="org1">My Org (Personal)</option>
                                     <option value="org2">Acme Corp (Team)</option>
                                 </select>
-                            </div>
-                            <div class="settings-col">
-                                <!-- placeholder -->
                             </div>
                         </div>
                     </div>

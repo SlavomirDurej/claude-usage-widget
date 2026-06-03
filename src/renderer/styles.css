@@ -848,9 +848,58 @@ body.theme-light .settings-disclaimer {
     flex: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     padding: 6px 14px;
     gap: 10px;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.settings-rows::-webkit-scrollbar {
+    width: 6px;
+}
+
+.settings-rows::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.settings-rows::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.settings-rows::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+body.theme-light .settings-rows::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+}
+
+body.theme-light .settings-rows::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.25);
+}
+
+/* Section grouping label */
+.settings-section-label {
+    color: #8b5cf6;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 4px 0;
+    margin-top: 2px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.settings-section-label:first-child {
+    margin-top: 0;
+    border-top: none;
+}
+
+body.theme-light .settings-section-label {
+    color: #7c3aed;
+    border-top-color: rgba(0,0,0,0.06);
 }
 
 .settings-row {
