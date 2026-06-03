@@ -55,6 +55,7 @@ const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit
 let mainWindow = null;
 let sessionTray = null;  // Tray icon for Session usage
 let weeklyTray = null;   // Tray icon for Weekly usage
+let isQuitting = false;  // Set when the user explicitly exits (bypasses close-to-tray)
 
 const WIDGET_WIDTH = process.platform === 'darwin' ? 590 : 560;
 const WIDGET_HEIGHT = 155;
@@ -105,7 +106,7 @@ async function setSessionCookie(sessionKey) {
   debugLog('sessionKey cookie set in Electron session');
 }
 
-function createMainWindow() {
+function createMainWindow(startHidden = false) {
   const savedPosition = store.get('windowPosition');
   const windowOptions = {
     width: WIDGET_WIDTH,
@@ -115,6 +116,7 @@ function createMainWindow() {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: false,
+    show: !startHidden,
     icon: path.join(__dirname, process.platform === 'darwin' ? 'assets/icon.icns' : process.platform === 'linux' ? 'assets/logo.png' : 'assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
@@ -500,6 +502,119 @@ function showMainWindowClean() {
   mainWindow.focus();
 }
 
+/**
+ * Detect whether the app was launched automatically at login.
+ * Used to start silently in the background instead of popping up the widget.
+ * - Windows/Linux: we pass a '--hidden' arg when registering the login item.
+ * - macOS: Electron reports wasOpenedAtLogin via getLoginItemSettings().
+ */
+function wasLaunchedAtLogin() {
+  if (process.argv.includes('--hidden')) return true;
+  try {
+    if (process.platform === 'darwin') {
+      return app.getLoginItemSettings().wasOpenedAtLogin === true;
+    }
+  } catch (_) { /* ignore */ }
+  return false;
+}
+
+/**
+ * Toggle the main window's visibility (used by tray click handlers).
+ */
+function toggleMainWindowVisibility() {
+  if (!mainWindow) {
+    createMainWindow();
+    return;
+  }
+  if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+    mainWindow.hide();
+  } else {
+    showMainWindowClean();
+  }
+}
+
+/**
+ * Build the shared tray context menu used by both the stats trays and the
+ * minimal restore tray.
+ */
+function buildTrayContextMenu() {
+  return Menu.buildFromTemplate([
+    {
+      label: 'Show Widget',
+      click: () => {
+        if (mainWindow) {
+          showMainWindowClean();
+        } else {
+          createMainWindow();
+        }
+      }
+    },
+    {
+      label: 'Refresh',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('refresh-usage');
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Log Out',
+      click: async () => {
+        store.delete('sessionKey');
+        store.delete('organizationId');
+        // Clear all Claude.ai cookies and session storage
+        const cookies = await session.defaultSession.cookies.get({ url: 'https://claude.ai' });
+        for (const cookie of cookies) {
+          await session.defaultSession.cookies.remove('https://claude.ai', cookie.name);
+        }
+        await session.defaultSession.clearStorageData({
+          storages: ['localstorage', 'sessionstorage', 'cachestorage'],
+          origin: 'https://claude.ai'
+        });
+        if (mainWindow) {
+          mainWindow.webContents.send('session-expired');
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Exit',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+}
+
+/**
+ * Ensure at least one tray icon exists so a hidden window can always be
+ * restored. Used by "close to tray" and silent startup. If tray stats are
+ * enabled the full stats trays are created; otherwise a single minimal
+ * restore icon is shown.
+ */
+function ensureRestoreTray() {
+  const hasSessionTray = sessionTray && !sessionTray.isDestroyed();
+  const hasWeeklyTray = weeklyTray && !weeklyTray.isDestroyed();
+  if (hasSessionTray || hasWeeklyTray) return;
+
+  if (store.get('settings.showTrayStats', false)) {
+    createTray();
+    return;
+  }
+
+  try {
+    const staticIconPath = path.join(__dirname, process.platform === 'darwin' ? 'assets/tray-icon-mac.png' : process.platform === 'linux' ? 'assets/tray-icon-linux.png' : 'assets/tray-icon.png');
+    sessionTray = new Tray(staticIconPath);
+    sessionTray.setToolTip('Claude Usage Widget');
+    sessionTray.setContextMenu(buildTrayContextMenu());
+    sessionTray.on('click', toggleMainWindowVisibility);
+  } catch (error) {
+    console.error('Failed to create restore tray:', error);
+  }
+}
+
 function createTray() {
   // Respect the tray stats setting even when createTray is called from generic refresh paths.
   if (!store.get('settings.showTrayStats', false)) {
@@ -524,77 +639,14 @@ function createTray() {
     sessionTray = new Tray(staticIconPath);
     sessionTray.setToolTip('Session Usage');
 
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Show Widget',
-        click: () => {
-          if (mainWindow) {
-            showMainWindowClean();
-          } else {
-            createMainWindow();
-          }
-        }
-      },
-      {
-        label: 'Refresh',
-        click: () => {
-          if (mainWindow) {
-            mainWindow.webContents.send('refresh-usage');
-          }
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Log Out',
-        click: async () => {
-          store.delete('sessionKey');
-          store.delete('organizationId');
-          // Clear all Claude.ai cookies and session storage
-          const cookies = await session.defaultSession.cookies.get({ url: 'https://claude.ai' });
-          for (const cookie of cookies) {
-            await session.defaultSession.cookies.remove('https://claude.ai', cookie.name);
-          }
-          await session.defaultSession.clearStorageData({
-            storages: ['localstorage', 'sessionstorage', 'cachestorage'],
-            origin: 'https://claude.ai'
-          });
-          if (mainWindow) {
-            mainWindow.webContents.send('session-expired');
-          }
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Exit',
-        click: () => {
-          app.quit();
-        }
-      }
-    ]);
+    const contextMenu = buildTrayContextMenu();
 
     sessionTray.setContextMenu(contextMenu);
     weeklyTray.setContextMenu(contextMenu);
 
-    // Click handlers - swapped order
-        weeklyTray.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
-          mainWindow.hide();
-        } else {
-          showMainWindowClean();
-        }
-      }
-    });
-    
-        sessionTray.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
-          mainWindow.hide();
-        } else {
-          showMainWindowClean();
-        }
-      }
-    });
+    // Click handlers toggle the main window's visibility.
+    weeklyTray.on('click', toggleMainWindowVisibility);
+    sessionTray.on('click', toggleMainWindowVisibility);
   } catch (error) {
     console.error('Failed to create tray:', error);
   }
@@ -874,6 +926,13 @@ ipcMain.on('minimize-window', () => {
 });
 
 ipcMain.on('close-window', () => {
+  // Close-to-tray: hide the window and keep tracking instead of quitting.
+  if (!isQuitting && store.get('settings.closeToTray', false)) {
+    if (mainWindow) mainWindow.hide();
+    ensureRestoreTray();
+    return;
+  }
+  isQuitting = true;
   app.quit();
 });
 
@@ -963,7 +1022,8 @@ ipcMain.handle('get-settings', () => {
     refreshInterval: store.get('settings.refreshInterval', '300'),
     graphVisible: store.get('settings.graphVisible', false),
     expandedOpen: store.get('settings.expandedOpen', false),
-    showTrayStats: store.get('settings.showTrayStats', false)
+    showTrayStats: store.get('settings.showTrayStats', false),
+    closeToTray: store.get('settings.closeToTray', false)
   };
 });
 
@@ -985,13 +1045,17 @@ ipcMain.handle('save-settings', (event, settings) => {
   store.set('settings.graphVisible', settings.graphVisible);
   store.set('settings.expandedOpen', settings.expandedOpen);
   store.set('settings.showTrayStats', settings.showTrayStats);
+  store.set('settings.closeToTray', settings.closeToTray);
 
   // openAtLogin is not supported on Linux — Electron silently ignores it.
   // Skip the call entirely to avoid misleading behaviour.
   if (supportsLoginItems) {
+    // openAsHidden (macOS) and the '--hidden' arg (Windows) let the app start
+    // silently in the background when launched automatically at login.
     app.setLoginItemSettings({
       openAtLogin: autoStart,
-      ...(process.platform !== 'darwin' && { path: app.getPath('exe') })
+      openAsHidden: true,
+      ...(process.platform !== 'darwin' && { path: app.getPath('exe'), args: ['--hidden'] })
     });
   }
 
@@ -1372,10 +1436,15 @@ app.whenReady().then(async () => {
     await setSessionCookie(sessionKey);
   }
 
-  createMainWindow();
+  // Start silently in the background when the app was auto-launched at login.
+  const startHidden = wasLaunchedAtLogin();
+  createMainWindow(startHidden);
   // Avoid creating temporary tray icons during startup when tray stats are disabled.
   if (store.get('settings.showTrayStats', false)) {
     createTray();
+  } else if (startHidden) {
+    // Ensure there's always a way to restore the silently-started window.
+    ensureRestoreTray();
   }
 
   // Apply persisted settings
