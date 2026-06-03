@@ -20,15 +20,16 @@
   "author": "Slavomir Durej",
   "license": "MIT",
   "copyright": "Copyright © 2025 Slavomir Durej",
+  "packageManager": "pnpm@11.5.1",
   "engines": {
     "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "pnpm": ">=9.0.0"
   },
   "devDependencies": {
     "@electron/notarize": "^3.1.1",
-    "cross-env": "^7.0.3",
-    "electron": "^28.3.3",
-    "electron-builder": "^24.9.1"
+    "cross-env": "^10.1.0",
+    "electron": "^42.3.2",
+    "electron-builder": "^26.8.1"
   },
   "dependencies": {
     "chart.js": "^4.5.1",

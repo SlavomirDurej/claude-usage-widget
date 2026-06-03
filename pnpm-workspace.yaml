@@ -1,0 +1,17 @@
+# electron-builder expects a hoisted (flat) node_modules layout. pnpm's default
+# isolated/symlinked store breaks native module unpacking and asar packaging, so
+# use the hoisted linker (same layout npm/yarn-classic produce).
+nodeLinker: hoisted
+
+# pnpm v11 build-script approvals (replaces onlyBuiltDependencies/ignoredBuiltDependencies).
+# electron: pnpm flags it as having a build script, so it must be approved here to
+#   avoid ERR_PNPM_IGNORED_BUILDS. Approving is effectively a no-op (electron@42 ships
+#   no install/postinstall script); the prebuilt binary is instead downloaded lazily on
+#   the first `require('electron')` (see node_modules/electron/index.js).
+# electron-winstaller: only used for Squirrel.Windows targets, which this project
+#   does not build (it uses nsis + portable), so its build script is not needed.
+# esbuild: pulled in transitively; no build step required for our use.
+allowBuilds:
+  electron: true
+  electron-winstaller: false
+  esbuild: false
