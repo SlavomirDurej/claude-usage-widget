@@ -69,14 +69,27 @@ The Extra Usage row now displays the correct currency symbol based on your accou
 
 ### Settings Options
 
-- ⚙️ **Launch at startup** — Auto-start with Windows or macOS login
+Settings are grouped into clear sections:
+
+**General**
+- ⚙️ **Launch at startup** — Auto-start with Windows or macOS login (starts silently in the background)
+- 📍 **Always on top** — Keep the widget visible across all workspaces
+- 📐 **Compact mode** — Minimal two-bar view
+- 🎨 **Theme** — Dark / Light / System
+
+**System Tray**
 - 📌 **Hide from taskbar** — Tray-only mode
-- 🎨 **Theme selector** — Dark / Light / System
-- ⚠️ **Warning thresholds** — Configurable amber and red levels for usage bars
-- 🔔 **Usage alerts** — Desktop notifications at warn/danger thresholds
+- 📊 **Show tray stats** — Render live usage in the tray icon
+- ✖️ **Close to tray** — Closing the window minimizes to the tray instead of quitting
+
+**Usage Alerts**
+- 🔔 **Enable alerts** — Desktop notifications at warn/danger thresholds
+- ⚠️ **Warn at** — Configurable amber and red threshold levels (shown when alerts are enabled)
+
+**Display & Data**
 - 🕐 **Time format** — 12h or 24h
 - 📅 **Date format** — Controls how the weekly reset date is displayed
-- 📐 **Compact mode** — Minimal two-bar view
+- 🔄 **Auto-refresh** — How often usage data updates (15s – 5 min)
 
 ---
 
@@ -157,13 +170,13 @@ cp ~/.local/share/applications/claude-usage-widget.desktop ~/.config/autostart/
 
 **Prerequisites:**
 - Node.js 18+ ([Download](https://nodejs.org))
-- npm (comes with Node.js)
+- [pnpm](https://pnpm.io) 9+ (`npm install -g pnpm`)
 
 ```bash
 git clone https://github.com/SlavomirDurej/claude-usage-widget.git
 cd claude-usage-widget
-npm install
-npm start
+pnpm install
+pnpm start
 ```
 
 
@@ -228,8 +241,8 @@ Right-click the tray icon for: Show/Hide, Refresh, Re-login, Settings, Exit.
 
 **Build errors** — Clean reinstall resolves most issues:
 ```bash
-rm -rf node_modules package-lock.json
-npm install
+rm -rf node_modules pnpm-lock.yaml
+pnpm install
 ```
 
 If issues persist, open a [Support discussion](../../discussions/categories/support) with your OS, Node.js version, and full error output.
