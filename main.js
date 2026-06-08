@@ -874,7 +874,10 @@ ipcMain.on('minimize-window', () => {
 });
 
 ipcMain.on('close-window', () => {
-  app.quit();
+  // hide the window instead of quitting, so tray icons remain active
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.hide();
+  }
 });
 
 ipcMain.on('resize-window', (event, height) => {
