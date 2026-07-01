@@ -730,14 +730,17 @@ function buildExtraRows(data) {
 }
 
 function refreshExtraTimers() {
-    const timerTexts = elements.extraRows.querySelectorAll('.timer-text');
-    const timerCircles = elements.extraRows.querySelectorAll('.timer-progress');
-
-    timerTexts.forEach((textEl, i) => {
+    // Pair each row's timer text with its own circle. Pairing the two
+    // querySelectorAll lists by index breaks as soon as one row has a text
+    // but no circle (the extra_usage row), leaving every later row's timer
+    // stuck at --:--.
+    elements.extraRows.querySelectorAll('.usage-section').forEach((row) => {
+        const textEl = row.querySelector('.timer-text');
+        const circleEl = row.querySelector('.timer-progress');
+        if (!textEl || !circleEl) return;
         const resetsAt = textEl.dataset.resets;
         const totalMinutes = parseInt(textEl.dataset.total);
-        const circleEl = timerCircles[i];
-        if (resetsAt && circleEl) {
+        if (resetsAt) {
             updateTimer(circleEl, textEl, resetsAt, totalMinutes);
         }
     });
