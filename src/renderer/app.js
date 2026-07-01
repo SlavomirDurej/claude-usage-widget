@@ -761,6 +761,23 @@ function resizeWidget(bannerVisible) {
 }
 
 function normalizeUsageData(data) {
+    // claude.ai now reports per-model weekly limits (e.g. Fable) as entries in
+    // the `limits` array with kind "weekly_scoped"; the legacy seven_day_<model>
+    // fields arrive null for those models. Map each scoped weekly limit onto a
+    // synthetic seven_day_* field so it renders like any other extra row.
+    for (const limit of (data.limits || [])) {
+        if (limit.kind !== 'weekly_scoped' || limit.percent == null) continue;
+        const scopeName = limit.scope?.model?.display_name || limit.scope?.surface || 'Scoped';
+        const key = 'seven_day_scoped_' + scopeName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        if (!EXTRA_ROW_CONFIG[key]) {
+            EXTRA_ROW_CONFIG[key] = { label: `${scopeName} (7d)`, color: 'opus' };
+            // Re-insert extra_usage so model rows stay grouped above it
+            const extraUsage = EXTRA_ROW_CONFIG.extra_usage;
+            delete EXTRA_ROW_CONFIG.extra_usage;
+            EXTRA_ROW_CONFIG.extra_usage = extraUsage;
+        }
+        data[key] = { utilization: limit.percent, resets_at: limit.resets_at };
+    }
     return data;
 }
 
