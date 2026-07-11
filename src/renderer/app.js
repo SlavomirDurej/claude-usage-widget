@@ -9,12 +9,15 @@ let _settingsOpenedFromCompact = false;
 let usageChart = null;
 let graphVisible = false;
 let graphWasVisible = false; // preserves graph state across compact mode toggle
+let slotsVisible = false;
+let slotState = { slots: [], armed: null, slot: null, plan: null };
 let appInitializing = true;  // suppresses _saveViewState during startup restore
 let isFetching = false;       // in-flight guard — prevents overlapping fetchUsageData calls
 const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const WIDGET_HEIGHT_COLLAPSED = 155;
 const WIDGET_ROW_HEIGHT = 30;
 const GRAPH_HEIGHT = 232;
+const SLOTS_HEIGHT = 200;
 
 // Debug logging — only shows in DevTools (development mode).
 // Regular users won't see verbose logs in production.
@@ -63,6 +66,19 @@ const elements = {
     extraRows: document.getElementById('extraRows'),
     graphSection: document.getElementById('graphSection'),
     usageChart: document.getElementById('usageChart'),
+
+    slotsBtn: document.getElementById('slotsBtn'),
+    slotsSection: document.getElementById('slotsSection'),
+    slotBanner: document.getElementById('slotBanner'),
+    slotBannerText: document.getElementById('slotBannerText'),
+    slotPlan: document.getElementById('slotPlan'),
+    slotPlanArmed: document.getElementById('slotPlanArmed'),
+    slotPlanSteps: document.getElementById('slotPlanSteps'),
+    slotDisarmBtn: document.getElementById('slotDisarmBtn'),
+    slotList: document.getElementById('slotList'),
+    slotLabelInput: document.getElementById('slotLabelInput'),
+    slotTimeInput: document.getElementById('slotTimeInput'),
+    slotAddBtn: document.getElementById('slotAddBtn'),
 
     settingsBtn: document.getElementById('settingsBtn'),
     settingsOverlay: document.getElementById('settingsOverlay'),
@@ -260,6 +276,33 @@ function setupEventListeners() {
         }
         if (!isCompactMode) resizeWidget();
         _saveViewState();
+    });
+
+    // Slot scheduler panel toggle
+    elements.slotsBtn.addEventListener('click', () => {
+        slotsVisible = !slotsVisible;
+        elements.slotsBtn.classList.toggle('active', slotsVisible);
+        elements.slotsSection.style.display = slotsVisible ? 'block' : 'none';
+        if (slotsVisible) renderSlots();
+        if (!isCompactMode) resizeWidget();
+    });
+
+    // Add a new slot
+    elements.slotAddBtn.addEventListener('click', addSlotFromInputs);
+    elements.slotLabelInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addSlotFromInputs();
+    });
+
+    // Disarm the currently armed slot
+    elements.slotDisarmBtn.addEventListener('click', async () => {
+        await window.electronAPI.disarmSlot();
+    });
+
+    // Receive live slot state pushed from the main process
+    window.electronAPI.onSlotUpdate((state) => {
+        slotState = state;
+        renderSlots();
+        renderSlotBanner();
     });
 
     elements.minimizeBtn.addEventListener('click', () => {
@@ -750,13 +793,15 @@ function resizeWidget(bannerVisible) {
     const hasBanner = bannerVisible !== undefined
         ? bannerVisible
         : elements.updateBanner.style.display !== 'none';
-    const bannerOffset = hasBanner ? BANNER_HEIGHT : 0;
+    const slotBannerVisible = elements.slotBanner && elements.slotBanner.style.display !== 'none';
+    const bannerOffset = (hasBanner ? BANNER_HEIGHT : 0) + (slotBannerVisible ? BANNER_HEIGHT : 0);
     const extraCount = elements.extraRows.children.length;
     const expandedOffset = isExpanded && extraCount > 0
         ? EXPAND_OVERHEAD + (extraCount * WIDGET_ROW_HEIGHT)
         : 0;
     const graphOffset = graphVisible ? GRAPH_HEIGHT : 0;
-    const totalHeight = WIDGET_HEIGHT_COLLAPSED + expandedOffset + graphOffset + bannerOffset;
+    const slotsOffset = slotsVisible ? SLOTS_HEIGHT : 0;
+    const totalHeight = WIDGET_HEIGHT_COLLAPSED + expandedOffset + graphOffset + slotsOffset + bannerOffset;
     window.electronAPI.resizeWindow(totalHeight);
 }
 
@@ -866,6 +911,13 @@ function applyCompactMode(compact) {
         elements.expandSection.style.display = 'none';
     }
 
+    // Hide the slots panel when entering compact mode
+    if (compact && slotsVisible) {
+        slotsVisible = false;
+        elements.slotsBtn.classList.remove('active');
+        elements.slotsSection.style.display = 'none';
+    }
+
     if (compact && graphVisible) {
         graphWasVisible = true;
         graphVisible = false;
@@ -888,6 +940,9 @@ function applyCompactMode(compact) {
     // Hide graph button in compact mode (not applicable)
     if (elements.graphBtn) {
         elements.graphBtn.style.display = compact ? 'none' : '';
+    }
+    if (elements.slotsBtn) {
+        elements.slotsBtn.style.display = compact ? 'none' : '';
     }
 
     // Tell main process to resize the window width
@@ -1200,6 +1255,7 @@ function showLoginRequired() {
     elements.settingsBtn.style.display = 'none';
     elements.refreshBtn.style.display = 'none';
     elements.graphBtn.style.display = 'none';
+    elements.slotsBtn.style.display = 'none';
     stopAutoUpdate();
     if (countdownInterval) {
         clearInterval(countdownInterval);
@@ -1236,6 +1292,7 @@ function showMainContent() {
     elements.settingsBtn.style.display = 'flex';
     elements.refreshBtn.style.display = 'flex';
     elements.graphBtn.style.display = isCompactMode ? 'none' : 'flex';
+    elements.slotsBtn.style.display = isCompactMode ? 'none' : 'flex';
 }
 
 // Auto-update management
@@ -1654,8 +1711,146 @@ async function checkForUpdate() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Session Slot Scheduler (renderer)
+// ---------------------------------------------------------------------------
+
+// Format an ISO timestamp as a clock time honouring the user's 12h/24h setting.
+function formatSlotClock(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    const use24h = ((window._cachedSettings || {}).timeFormat || '12h') === '24h';
+    let h = d.getHours();
+    const m = String(d.getMinutes()).padStart(2, '0');
+    if (use24h) return `${String(h).padStart(2, '0')}:${m}`;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${m} ${ampm}`;
+}
+
+// Is the target on a later calendar day than now?
+function isTomorrow(iso) {
+    const d = new Date(iso);
+    const now = new Date();
+    return d.getDate() !== now.getDate() || d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear();
+}
+
+async function loadSlotState() {
+    try {
+        slotState = await window.electronAPI.getSlotState();
+        renderSlots();
+        renderSlotBanner();
+    } catch (e) {
+        debugLog('loadSlotState failed', e);
+    }
+}
+
+async function addSlotFromInputs() {
+    const label = elements.slotLabelInput.value.trim() || 'Slot';
+    const time = elements.slotTimeInput.value;
+    if (!/^\d{1,2}:\d{2}$/.test(time)) return;
+    const id = 'slot-' + Date.now().toString(36);
+    const slots = [...(slotState.slots || []), { id, label, time }];
+    const res = await window.electronAPI.saveSlots(slots);
+    if (res && res.ok) {
+        slotState.slots = res.slots;
+        elements.slotLabelInput.value = '';
+        renderSlots();
+    }
+}
+
+async function deleteSlot(slotId) {
+    const slots = (slotState.slots || []).filter((s) => s.id !== slotId);
+    const res = await window.electronAPI.saveSlots(slots);
+    if (res && res.ok) {
+        slotState.slots = res.slots;
+        renderSlots();
+    }
+}
+
+async function armSlot(slotId) {
+    await window.electronAPI.armSlot(slotId);
+    // The main process pushes the fresh plan via onSlotUpdate.
+}
+
+function renderSlots() {
+    if (!elements.slotList) return;
+    const { slots = [], armed, plan, slot } = slotState;
+
+    // Slot list
+    elements.slotList.innerHTML = '';
+    slots.forEach((s) => {
+        const isArmed = armed && armed.slotId === s.id;
+        const row = document.createElement('div');
+        row.className = 'slot-item' + (isArmed ? ' armed' : '');
+        row.innerHTML = `
+            <span class="slot-item-label">${escapeHtml(s.label)}</span>
+            <span class="slot-item-time">${formatSlotClock(setTodayIso(s.time))}</span>
+            <button class="slot-arm-btn" data-arm="${s.id}">${isArmed ? 'Armed' : 'Arm'}</button>
+            <button class="slot-del-btn" data-del="${s.id}" title="Delete">✕</button>`;
+        elements.slotList.appendChild(row);
+    });
+
+    elements.slotList.querySelectorAll('[data-arm]').forEach((btn) => {
+        btn.addEventListener('click', () => armSlot(btn.getAttribute('data-arm')));
+    });
+    elements.slotList.querySelectorAll('[data-del]').forEach((btn) => {
+        btn.addEventListener('click', () => deleteSlot(btn.getAttribute('data-del')));
+    });
+
+    // Plan panel
+    if (armed && plan && slot) {
+        elements.slotPlan.style.display = 'block';
+        const day = isTomorrow(plan.targetAt) ? ' tomorrow' : '';
+        elements.slotPlanArmed.textContent = `${slot.label} → starts${day} at ${formatSlotClock(plan.targetAt)}`;
+
+        const steps = [];
+        if (plan.windowActive) {
+            steps.push(`Current session ends ${formatSlotClock(plan.currentSessionEnd)}.`);
+        }
+        if (plan.hasIdle) {
+            steps.push(`Stay idle ${formatSlotClock(plan.idleFrom)} → ${formatSlotClock(plan.idleTo)} (don't send anything).`);
+        }
+        if (plan.numFillers > 0) {
+            const fillers = plan.triggerTimes.slice(0, plan.numFillers).map(formatSlotClock).join(', ');
+            steps.push(`Filler window${plan.numFillers > 1 ? 's' : ''} auto-open at ${fillers} — yours to use.`);
+        }
+        steps.push(`Auto-start your window at ${formatSlotClock(plan.targetAt)}.`);
+        elements.slotPlanSteps.innerHTML = steps.map((t) => `<div class="slot-step">• ${escapeHtml(t)}</div>`).join('');
+    } else {
+        elements.slotPlan.style.display = 'none';
+    }
+}
+
+function renderSlotBanner() {
+    if (!elements.slotBanner) return;
+    const { armed, plan, slot } = slotState;
+    const show = armed && plan && plan.inIdleNow;
+    if (show) {
+        elements.slotBannerText.textContent = `⏸ IDLE until ${formatSlotClock(plan.idleTo)} — don't send anything or your ${slot.label} slot shifts.`;
+        elements.slotBanner.style.display = 'flex';
+    } else {
+        elements.slotBanner.style.display = 'none';
+    }
+    if (!isCompactMode) resizeWidget();
+}
+
+// Build an ISO string for the given "HH:MM" at today's date, for display only.
+function setTodayIso(hhmm) {
+    const [h, m] = hhmm.split(':').map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d.toISOString();
+}
+
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 // Start the application
 init();
+loadSlotState();
 window.addEventListener('beforeunload', () => {
     stopAutoUpdate();
     if (countdownInterval) clearInterval(countdownInterval);

@@ -40,6 +40,12 @@
                             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                         </svg>
                     </button>
+                    <button class="control-btn slots-btn" id="slotsBtn" title="Session Slot Scheduler">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="9" />
+                            <polyline points="12 7 12 12 15 14" />
+                        </svg>
+                    </button>
                     <button class="control-btn minimize-btn" id="minimizeBtn" title="Minimise to System Tray">−</button>
                     <button class="control-btn close-btn" id="closeBtn" title="Exit Application">×</button>
                 </div>
@@ -49,6 +55,11 @@
             <div class="update-banner" id="updateBanner" style="display: none;">
                 <span class="update-banner-text" id="updateBannerText"></span>
                 <button class="update-banner-dismiss" id="updateBannerDismiss" title="Dismiss">✕</button>
+            </div>
+
+            <!-- Slot Guard Banner (shown during the "do not send" idle window) -->
+            <div class="slot-banner" id="slotBanner" style="display: none;">
+                <span class="slot-banner-text" id="slotBannerText"></span>
             </div>
 
             <!-- Loading State -->
@@ -184,6 +195,34 @@
 
                 <div class="graph-section" id="graphSection" style="display: none;">
                     <canvas id="usageChart"></canvas>
+                </div>
+
+                <!-- Session Slot Scheduler panel -->
+                <div class="slots-section" id="slotsSection" style="display: none;">
+                    <div class="slots-header">
+                        <span class="slots-title">Session Slots</span>
+                        <span class="slots-subtitle">Target when your 5-hour window starts</span>
+                    </div>
+
+                    <!-- Live plan for the armed slot -->
+                    <div class="slot-plan" id="slotPlan" style="display: none;">
+                        <div class="slot-plan-row">
+                            <span class="slot-plan-label">Armed</span>
+                            <span class="slot-plan-value" id="slotPlanArmed">—</span>
+                            <button class="slot-disarm-btn" id="slotDisarmBtn" title="Disarm">Disarm</button>
+                        </div>
+                        <div class="slot-plan-steps" id="slotPlanSteps"></div>
+                    </div>
+
+                    <!-- Slot list -->
+                    <div class="slot-list" id="slotList"></div>
+
+                    <!-- Add / edit slot -->
+                    <div class="slot-add-row">
+                        <input type="text" id="slotLabelInput" class="slot-input slot-label-input" placeholder="Label" maxlength="24" spellcheck="false">
+                        <input type="time" id="slotTimeInput" class="slot-input slot-time-input" value="08:00">
+                        <button class="slot-add-btn" id="slotAddBtn">Add</button>
+                    </div>
                 </div>
 
 

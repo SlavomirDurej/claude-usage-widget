@@ -71,5 +71,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body }),
 
   // Compact mode
-  setCompactMode: (compact) => ipcRenderer.send('set-compact-mode', compact)
+  setCompactMode: (compact) => ipcRenderer.send('set-compact-mode', compact),
+
+  // Session slot scheduler
+  getSlotState: () => ipcRenderer.invoke('get-slot-state'),
+  saveSlots: (slots) => ipcRenderer.invoke('save-slots', slots),
+  armSlot: (slotId) => ipcRenderer.invoke('arm-slot', slotId),
+  disarmSlot: () => ipcRenderer.invoke('disarm-slot'),
+  onSlotUpdate: (callback) => {
+    ipcRenderer.on('slot-update', (_event, state) => callback(state));
+  }
 });

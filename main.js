@@ -3,6 +3,8 @@ const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
+const { computePlan, FIVE_HOURS_MS } = require('./src/slot-planner');
+const { sendSlotStarter } = require('./src/slot-sender');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
@@ -990,6 +992,237 @@ ipcMain.on('show-notification', (event, { title, body }) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Session Slot Scheduler
+//
+// Lets the user target specific 5-hour window start times (e.g. "start my slot
+// at 8 AM") and auto-sends a throwaway "hi" at the right moments to align the
+// window. See src/slot-planner.js for the planning maths and
+// src/slot-sender.js for the send mechanism, and docs/plans for the design.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_SLOTS = [
+  { id: 'slot-early', label: 'Early', time: '06:00' },
+  { id: 'slot-morning', label: 'Morning', time: '08:00' },
+  { id: 'slot-afternoon', label: 'Afternoon', time: '13:00' },
+];
+
+let slotSending = false;
+// In-memory per-arm notification state (reset on arm / after firing target).
+let slotNotify = { idleNotified: false, lastTargetMs: null };
+
+function resetSlotNotify() {
+  slotNotify = { idleNotified: false, lastTargetMs: null };
+}
+
+function getSlots() {
+  let slots = store.get('slots');
+  if (!Array.isArray(slots)) {
+    slots = DEFAULT_SLOTS;
+    store.set('slots', slots);
+  }
+  return slots;
+}
+
+function findSlot(slotId) {
+  return getSlots().find((s) => s.id === slotId) || null;
+}
+
+function getArmed() {
+  return store.get('armedSlot') || null;
+}
+
+function setArmed(v) {
+  if (v) store.set('armedSlot', v);
+  else store.delete('armedSlot');
+}
+
+// Lightweight time formatter for notifications (renderer formats its own UI).
+function formatSlotTime(date) {
+  const use24h = store.get('settings.timeFormat', '12h') === '24h';
+  let h = date.getHours();
+  const m = String(date.getMinutes()).padStart(2, '0');
+  if (use24h) return `${String(h).padStart(2, '0')}:${m}`;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${ampm}`;
+}
+
+function notifySlot(title, body) {
+  if (Notification.isSupported()) {
+    new Notification({ title, body, silent: false }).show();
+  }
+}
+
+// Serialise a plan (Dates -> ISO) for the renderer, with a few derived flags.
+function serializePlan(plan, now) {
+  const inIdleNow =
+    plan.hasIdle && now >= plan.idleFrom.getTime() && now < plan.idleTo.getTime();
+  const nextTrigger = plan.triggerTimes.find((t) => t.getTime() > now) || null;
+  return {
+    currentSessionEnd: plan.currentSessionEnd.toISOString(),
+    windowActive: plan.windowActive,
+    targetAt: plan.targetAt.toISOString(),
+    numFillers: plan.numFillers,
+    triggerTimes: plan.triggerTimes.map((t) => t.toISOString()),
+    idleFrom: plan.idleFrom.toISOString(),
+    idleTo: plan.idleTo.toISOString(),
+    hasIdle: plan.hasIdle,
+    inIdleNow,
+    nextTriggerAt: nextTrigger ? nextTrigger.toISOString() : null,
+  };
+}
+
+function currentResetsAt() {
+  return store.get('latestUsageData')?.five_hour?.resets_at || null;
+}
+
+// Push current slot state (list + armed + live plan) to the renderer.
+function pushSlotState(extra = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const armed = getArmed();
+  const now = Date.now();
+  let slot = null;
+  let plan = null;
+  if (armed) {
+    slot = findSlot(armed.slotId);
+    if (slot) {
+      const p = computePlan({ slotTime: slot.time, resetsAt: currentResetsAt(), now: new Date(now) });
+      plan = serializePlan(p, now);
+    }
+  }
+  mainWindow.webContents.send('slot-update', {
+    slots: getSlots(),
+    armed,
+    slot,
+    plan,
+    ...extra,
+  });
+}
+
+// The scheduler heartbeat: recompute the plan, warn about idle, and fire any
+// due trigger. Runs every 15s and also right after each usage refresh.
+async function tickSlotScheduler() {
+  const armed = getArmed();
+  if (!armed) return;
+
+  const slot = findSlot(armed.slotId);
+  if (!slot) {
+    setArmed(null);
+    resetSlotNotify();
+    pushSlotState();
+    return;
+  }
+
+  const now = new Date();
+  const plan = computePlan({ slotTime: slot.time, resetsAt: currentResetsAt(), now });
+  const targetMs = plan.targetAt.getTime();
+
+  // Detect a plan shift (e.g. user broke idle and the window moved).
+  if (slotNotify.lastTargetMs != null && slotNotify.lastTargetMs !== targetMs) {
+    notifySlot('Slot plan changed', `${slot.label}: your window now lands at ${formatSlotTime(plan.targetAt)}.`);
+    slotNotify.idleNotified = false;
+  }
+  slotNotify.lastTargetMs = targetMs;
+
+  // Idle guard — notify once when the "do not send" window begins.
+  const inIdle = plan.hasIdle && now >= plan.idleFrom && now < plan.idleTo;
+  if (inIdle && !slotNotify.idleNotified) {
+    notifySlot('Stay idle to hit your slot', `Don't send anything until ${formatSlotTime(plan.idleTo)} or your ${slot.label} target will shift.`);
+    slotNotify.idleNotified = true;
+  }
+
+  // Fire due triggers. If several elapsed while the app was closed, one send is
+  // enough to claim the currently-open window, so fire only the latest.
+  const firedUpTo = armed.firedUpTo ? new Date(armed.firedUpTo).getTime() : 0;
+  const due = plan.triggerTimes.filter((t) => t.getTime() <= now.getTime() && t.getTime() > firedUpTo);
+
+  if (due.length && !slotSending) {
+    const target = due[due.length - 1];
+    const isFinal = target.getTime() === targetMs;
+    slotSending = true;
+    try {
+      const result = await sendSlotStarter({
+        organizationId: store.get('organizationId'),
+        conversationId: store.get('slotStarterConversationId') || null,
+      });
+      if (result && result.conversationId) {
+        store.set('slotStarterConversationId', result.conversationId);
+      }
+      if (result && result.ok) {
+        setArmed({ slotId: armed.slotId, firedUpTo: target.toISOString() });
+        if (isFinal) {
+          const endsAt = new Date(target.getTime() + FIVE_HOURS_MS);
+          notifySlot('Slot started', `${slot.label} window opened — runs until ${formatSlotTime(endsAt)}.`);
+          setArmed(null);
+          resetSlotNotify();
+        } else {
+          notifySlot('Interim window opened', `${slot.label}: filler window opened, still targeting ${formatSlotTime(plan.targetAt)}.`);
+        }
+        // Refresh usage so the UI reflects the newly opened window promptly.
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('refresh-usage');
+      } else {
+        notifySlot('Slot send failed', `Couldn't start ${slot.label} automatically — send "hi" to Claude yourself. ${result && result.error ? '(' + result.error + ')' : ''}`);
+      }
+    } catch (err) {
+      notifySlot('Slot send failed', `Couldn't start ${slot.label} automatically — send "hi" to Claude yourself.`);
+      debugLog('[Slots] send error:', err && err.message);
+    } finally {
+      slotSending = false;
+    }
+  }
+
+  pushSlotState();
+}
+
+ipcMain.handle('get-slot-state', () => {
+  const armed = getArmed();
+  const now = Date.now();
+  let slot = null;
+  let plan = null;
+  if (armed) {
+    slot = findSlot(armed.slotId);
+    if (slot) {
+      const p = computePlan({ slotTime: slot.time, resetsAt: currentResetsAt(), now: new Date(now) });
+      plan = serializePlan(p, now);
+    }
+  }
+  return { slots: getSlots(), armed, slot, plan };
+});
+
+ipcMain.handle('save-slots', (event, slots) => {
+  if (!Array.isArray(slots)) return { ok: false };
+  // Basic validation/normalisation.
+  const clean = slots
+    .filter((s) => s && s.id && /^\d{1,2}:\d{2}$/.test(s.time))
+    .map((s) => ({ id: String(s.id), label: String(s.label || 'Slot').slice(0, 24), time: s.time }));
+  store.set('slots', clean);
+  // If the armed slot was deleted, disarm.
+  const armed = getArmed();
+  if (armed && !clean.find((s) => s.id === armed.slotId)) {
+    setArmed(null);
+    resetSlotNotify();
+  }
+  pushSlotState();
+  return { ok: true, slots: clean };
+});
+
+ipcMain.handle('arm-slot', (event, slotId) => {
+  const slot = findSlot(slotId);
+  if (!slot) return { ok: false, error: 'Unknown slot' };
+  setArmed({ slotId, firedUpTo: null });
+  resetSlotNotify();
+  tickSlotScheduler();
+  return { ok: true };
+});
+
+ipcMain.handle('disarm-slot', () => {
+  setArmed(null);
+  resetSlotNotify();
+  pushSlotState();
+  return { ok: true };
+});
+
 // Resize window for compact vs normal mode
 // Compact: 290px wide, normal: 530px wide. Height stays managed by renderer.
 ipcMain.on('set-compact-mode', (event, compact) => {
@@ -1389,6 +1622,9 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Store latest usage data for settings refresh
   store.set('latestUsageData', data);
 
+  // Recompute the slot plan against the freshly fetched reset time.
+  tickSlotScheduler();
+
   // Update tray icon with current usage data
   updateTrayIcon(data);
 
@@ -1446,6 +1682,15 @@ app.whenReady().then(async () => {
     }
     mainWindow.setAlwaysOnTop(alwaysOnTop, 'floating');
   }
+
+  // Seed default slots on first run so the panel isn't empty.
+  getSlots();
+
+  // Slot scheduler heartbeat — fires due triggers and updates the guard banner
+  // even between usage refreshes.
+  setInterval(() => {
+    tickSlotScheduler();
+  }, 15000);
 
   // Periodic always-on-top re-assertion to recover from z-order disruptions
   // (hidden window spawns, window manager shortcuts, alt-tab, etc.)
