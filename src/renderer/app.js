@@ -1807,11 +1807,16 @@ async function disarmSlotAction() {
     // The main process pushes the cleared state via onSlotUpdate.
 }
 
-function renderSlots() {
+// Rebuild the slot rows. Skips the rebuild while the user is actively editing a
+// field in the list — otherwise a mid-edit re-render (e.g. the native time
+// input firing 'change' after the first minute digit) would reset the input and
+// swallow further keystrokes. The row already shows what the user typed, so
+// there's nothing to repaint until they move focus away.
+function renderSlotList() {
     if (!elements.slotList) return;
-    const { slots = [], armed, plan, slot } = slotState;
+    if (elements.slotList.contains(document.activeElement)) return;
 
-    // Slot list
+    const { slots = [], armed } = slotState;
     elements.slotList.innerHTML = '';
     slots.forEach((s) => {
         const isArmed = armed && armed.slotId === s.id;
@@ -1837,17 +1842,28 @@ function renderSlots() {
     elements.slotList.querySelectorAll('[data-del]').forEach((btn) => {
         btn.addEventListener('click', () => deleteSlot(btn.getAttribute('data-del')));
     });
-    // Inline edit: rename label (save on blur/Enter) and change time (save on change)
+    // Inline edit: rename label (save on blur/Enter) and change time (save on change).
+    // On blur, re-render once so any state that changed while editing catches up.
     elements.slotList.querySelectorAll('[data-editlabel]').forEach((inp) => {
-        const commit = () => editSlot(inp.getAttribute('data-editlabel'), { label: inp.value.trim() || 'Slot' });
-        inp.addEventListener('blur', commit);
+        inp.addEventListener('blur', () => {
+            editSlot(inp.getAttribute('data-editlabel'), { label: inp.value.trim() || 'Slot' });
+        });
         inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
     });
     elements.slotList.querySelectorAll('[data-edittime]').forEach((inp) => {
-        inp.addEventListener('change', () => {
+        const save = () => {
             if (/^\d{1,2}:\d{2}$/.test(inp.value)) editSlot(inp.getAttribute('data-edittime'), { time: inp.value });
-        });
+        };
+        inp.addEventListener('change', save);
+        inp.addEventListener('blur', save);
     });
+}
+
+function renderSlots() {
+    if (!elements.slotList) return;
+    const { armed, plan, slot } = slotState;
+
+    renderSlotList();
 
     // Plan panel
     if (armed && plan && slot) {
