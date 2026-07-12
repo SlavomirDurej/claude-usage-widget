@@ -1814,7 +1814,11 @@ async function disarmSlotAction() {
 // there's nothing to repaint until they move focus away.
 function renderSlotList() {
     if (!elements.slotList) return;
-    if (elements.slotList.contains(document.activeElement)) return;
+    // Only skip the rebuild while a text/time FIELD is being edited (rebuilding
+    // would reset it mid-edit). Arm/Disarm/delete buttons don't hold editable
+    // state, so a click on them must still trigger a rebuild to flip the label.
+    const ae = document.activeElement;
+    if (ae && elements.slotList.contains(ae) && ae.matches('[data-editlabel],[data-edittime]')) return;
 
     const { slots = [], armed } = slotState;
     elements.slotList.innerHTML = '';

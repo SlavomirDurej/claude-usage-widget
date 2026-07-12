@@ -1643,6 +1643,13 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
 
 // App lifecycle
 app.whenReady().then(async () => {
+  // Windows requires an explicit AppUserModelId for desktop toast notifications
+  // to appear at all (usage alerts AND slot idle/trigger alerts). Without it,
+  // new Notification().show() silently no-ops in unpackaged/portable runs.
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.claudeusage.widget');
+  }
+
   // Restore session cookie if we have stored credentials
   let sessionKey = null;
   if (safeStorage.isEncryptionAvailable()) {
