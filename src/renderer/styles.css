@@ -1654,12 +1654,14 @@ body.theme-light .compact-pct {
 
 .slot-disarm-btn {
     border: none;
-    background: rgba(255, 255, 255, 0.08);
-    color: #cbd5e1;
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    color: #fff;
     border-radius: 5px;
     font-size: 10px;
-    padding: 3px 8px;
+    font-weight: 600;
+    padding: 4px 10px;
     cursor: pointer;
+    flex-shrink: 0;
     font-family: inherit;
 }
 
@@ -1772,9 +1774,14 @@ body.theme-light .slot-item-time {
     filter: brightness(1.12);
 }
 
-.slot-item.armed .slot-arm-btn {
-    background: rgba(255, 255, 255, 0.15);
-    cursor: default;
+/* Armed slot's button becomes a clear, clickable Disarm control */
+.slot-arm-btn.disarm {
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    cursor: pointer;
+}
+
+.slot-arm-btn.disarm:hover {
+    filter: brightness(1.12);
 }
 
 .slot-del-btn {

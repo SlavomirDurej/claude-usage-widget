@@ -1802,6 +1802,11 @@ async function armSlot(slotId) {
     // The main process pushes the fresh plan via onSlotUpdate.
 }
 
+async function disarmSlotAction() {
+    await window.electronAPI.disarmSlot();
+    // The main process pushes the cleared state via onSlotUpdate.
+}
+
 function renderSlots() {
     if (!elements.slotList) return;
     const { slots = [], armed, plan, slot } = slotState;
@@ -1815,13 +1820,19 @@ function renderSlots() {
         row.innerHTML = `
             <input class="slot-item-label" data-editlabel="${s.id}" value="${escapeHtml(s.label)}" maxlength="24" spellcheck="false" title="Click to rename">
             <input type="time" class="slot-item-time" data-edittime="${s.id}" value="${s.time}" title="Click to change time">
-            <button class="slot-arm-btn" data-arm="${s.id}">${isArmed ? 'Armed' : 'Arm'}</button>
+            <button class="slot-arm-btn${isArmed ? ' disarm' : ''}" data-arm="${s.id}">${isArmed ? 'Disarm' : 'Arm'}</button>
             <button class="slot-del-btn" data-del="${s.id}" title="Delete">✕</button>`;
         elements.slotList.appendChild(row);
     });
 
+    // Arm button toggles: if this slot is already armed, clicking disarms it.
     elements.slotList.querySelectorAll('[data-arm]').forEach((btn) => {
-        btn.addEventListener('click', () => armSlot(btn.getAttribute('data-arm')));
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-arm');
+            const thisArmed = slotState.armed && slotState.armed.slotId === id;
+            if (thisArmed) disarmSlotAction();
+            else armSlot(id);
+        });
     });
     elements.slotList.querySelectorAll('[data-del]').forEach((btn) => {
         btn.addEventListener('click', () => deleteSlot(btn.getAttribute('data-del')));
