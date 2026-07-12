@@ -1589,6 +1589,18 @@ body.theme-light .compact-pct {
     padding-top: 8px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     -webkit-app-region: no-drag;
+    max-height: 512px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.slots-section::-webkit-scrollbar {
+    width: 6px;
+}
+
+.slots-section::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.4);
+    border-radius: 3px;
 }
 
 .slots-header {
@@ -1691,20 +1703,57 @@ body.theme-light .compact-pct {
     padding: 4px 7px;
 }
 
+/* Editable label — looks like text until focused */
 .slot-item-label {
     flex: 1;
+    min-width: 0;
     font-size: 11px;
     color: #e0e0e0;
     font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-family: inherit;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 2px 4px;
+    outline: none;
 }
 
+.slot-item-label:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.slot-item-label:focus {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(139, 92, 246, 0.6);
+}
+
+/* Editable time */
 .slot-item-time {
     font-size: 11px;
-    color: #a0a0a0;
+    color: #c0c0c0;
+    font-family: inherit;
     font-variant-numeric: tabular-nums;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 2px 2px;
+    outline: none;
+    color-scheme: dark;
+    cursor: pointer;
+}
+
+.slot-item-time:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.slot-item-time:focus {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(139, 92, 246, 0.6);
+}
+
+body.theme-light .slot-item-time {
+    color-scheme: light;
+    color: #444;
 }
 
 .slot-arm-btn {

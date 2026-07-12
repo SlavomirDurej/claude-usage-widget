@@ -57,17 +57,29 @@ idleTo   = firstFiller                                 // == Ts when numFillers 
 triggerTimes = [firstFiller, firstFiller+FIVE_H, …, Ts]  // numFillers + 1 sends
 ```
 
-Filler windows are placed contiguous, ending exactly at `Ts`, with the leftover
-idle pushed to the front (right after the current session ends). The widget
-auto-sends "hi" at every `triggerTime`. Filler windows are the user's to use or
-ignore; opening one costs a single throwaway message. The final trigger at `Ts`
-opens the real target window and is guaranteed regardless of whether the fillers
-were used.
+Filler windows run **contiguous from the moment the current session ends**, and
+the leftover idle slack is pushed to the **end** — the stretch right before the
+target. This is deliberate: for a morning target the idle lands in the pre-dawn
+hours (while the user is asleep) instead of wasting waking daytime. Placing the
+idle at the front (the first implementation) told the user to sit idle 11:00–15:00,
+which is exactly the productive time they wanted to keep. The widget auto-sends
+"hi" at every `triggerTime`. Filler windows are the user's to use or ignore;
+opening one costs a single throwaway message. The final trigger at `Ts` opens the
+real target window and is guaranteed regardless of whether the fillers were used.
+
+```
+startMs = E
+triggerTimes = [E, E+5h, …, E+(numFillers-1)*5h, Ts]   // fillers back-to-back, then target
+idleFrom = E + numFillers*5h                            // last filler's end
+idleTo   = Ts                                           // idle sits just before target
+```
 
 Worked examples (target 08:00):
 - Current ends 05:00 → gap 3h, 0 fillers → idle 05:00–08:00, one send at 08:00.
-- Current ends 00:00 → gap 8h, 1 filler → idle 00:00–03:00, send 03:00 (filler
-  03:00–08:00), send 08:00 (target).
+- Current ends 00:00 → gap 8h, 1 filler → send 00:00 (filler 00:00–05:00), idle
+  05:00–08:00, send 08:00 (target).
+- Current ends 11:00, target 06:00 → 3 fillers 11:00/16:00/21:00 covering the
+  waking day, idle 02:00–06:00 (asleep), send 06:00.
 - No active window, armed at 07:10 → Ts today 08:00 → idle until 08:00, send.
 - No active window, armed at 09:30 (08:00 passed) → Ts tomorrow 08:00.
 

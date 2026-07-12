@@ -86,15 +86,22 @@ function computePlan({ slotTime, resetsAt, now = new Date() }) {
   const gap = targetAt.getTime() - currentSessionEnd.getTime();
   const numFillers = Math.max(0, Math.floor(gap / FIVE_HOURS_MS));
 
-  const firstTriggerMs = targetAt.getTime() - numFillers * FIVE_HOURS_MS;
+  const startMs = currentSessionEnd.getTime();
 
+  // End placement: run the filler windows back-to-back starting the moment the
+  // current session ends, and push the leftover idle slack to the very end —
+  // the stretch right before the target. For a morning target this lands the
+  // "do not send" idle in the pre-dawn hours (while you're asleep) instead of
+  // wasting your waking daytime, which is what the user actually wants.
   const triggerTimes = [];
-  for (let k = numFillers; k >= 0; k--) {
-    triggerTimes.push(new Date(targetAt.getTime() - k * FIVE_HOURS_MS));
+  for (let k = 0; k < numFillers; k++) {
+    triggerTimes.push(new Date(startMs + k * FIVE_HOURS_MS));
   }
+  triggerTimes.push(new Date(targetAt));
 
-  const idleFrom = new Date(currentSessionEnd);
-  const idleTo = new Date(firstTriggerMs);
+  const lastFillerEnd = startMs + numFillers * FIVE_HOURS_MS;
+  const idleFrom = new Date(lastFillerEnd);
+  const idleTo = new Date(targetAt);
   const hasIdle = idleTo.getTime() > idleFrom.getTime();
 
   return {

@@ -17,7 +17,8 @@ const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const WIDGET_HEIGHT_COLLAPSED = 155;
 const WIDGET_ROW_HEIGHT = 30;
 const GRAPH_HEIGHT = 232;
-const SLOTS_HEIGHT = 200;
+const SLOTS_HEIGHT = 200;      // fallback before the panel has laid out
+const SLOTS_MAX = 520;         // matches .slots-section max-height (512) + margin
 
 // Debug logging — only shows in DevTools (development mode).
 // Regular users won't see verbose logs in production.
@@ -800,7 +801,16 @@ function resizeWidget(bannerVisible) {
         ? EXPAND_OVERHEAD + (extraCount * WIDGET_ROW_HEIGHT)
         : 0;
     const graphOffset = graphVisible ? GRAPH_HEIGHT : 0;
-    const slotsOffset = slotsVisible ? SLOTS_HEIGHT : 0;
+    // Measure the slots panel's actual content height (plan + list + add row)
+    // so the window grows to fit and never clips. Capped by the section's CSS
+    // max-height, beyond which the panel itself scrolls.
+    let slotsOffset = 0;
+    if (slotsVisible && elements.slotsSection) {
+        const measured = elements.slotsSection.scrollHeight || SLOTS_HEIGHT;
+        // Grow to fit the whole panel (+small buffer). Cap keeps it on-screen;
+        // beyond the cap the panel itself scrolls.
+        slotsOffset = Math.min(measured + 10, SLOTS_MAX);
+    }
     const totalHeight = WIDGET_HEIGHT_COLLAPSED + expandedOffset + graphOffset + slotsOffset + bannerOffset;
     window.electronAPI.resizeWindow(totalHeight);
 }
@@ -1769,6 +1779,24 @@ async function deleteSlot(slotId) {
     }
 }
 
+// Edit an existing slot's label and/or time in place.
+async function editSlot(slotId, patch) {
+    const slots = (slotState.slots || []).map((s) =>
+        s.id === slotId ? { ...s, ...patch } : s
+    );
+    // No change? skip the round-trip.
+    const before = (slotState.slots || []).find((s) => s.id === slotId);
+    if (before && ((patch.label === undefined || patch.label === before.label) &&
+        (patch.time === undefined || patch.time === before.time))) {
+        return;
+    }
+    const res = await window.electronAPI.saveSlots(slots);
+    if (res && res.ok) {
+        slotState.slots = res.slots;
+        renderSlots();
+    }
+}
+
 async function armSlot(slotId) {
     await window.electronAPI.armSlot(slotId);
     // The main process pushes the fresh plan via onSlotUpdate.
@@ -1785,8 +1813,8 @@ function renderSlots() {
         const row = document.createElement('div');
         row.className = 'slot-item' + (isArmed ? ' armed' : '');
         row.innerHTML = `
-            <span class="slot-item-label">${escapeHtml(s.label)}</span>
-            <span class="slot-item-time">${formatSlotClock(setTodayIso(s.time))}</span>
+            <input class="slot-item-label" data-editlabel="${s.id}" value="${escapeHtml(s.label)}" maxlength="24" spellcheck="false" title="Click to rename">
+            <input type="time" class="slot-item-time" data-edittime="${s.id}" value="${s.time}" title="Click to change time">
             <button class="slot-arm-btn" data-arm="${s.id}">${isArmed ? 'Armed' : 'Arm'}</button>
             <button class="slot-del-btn" data-del="${s.id}" title="Delete">✕</button>`;
         elements.slotList.appendChild(row);
@@ -1798,6 +1826,17 @@ function renderSlots() {
     elements.slotList.querySelectorAll('[data-del]').forEach((btn) => {
         btn.addEventListener('click', () => deleteSlot(btn.getAttribute('data-del')));
     });
+    // Inline edit: rename label (save on blur/Enter) and change time (save on change)
+    elements.slotList.querySelectorAll('[data-editlabel]').forEach((inp) => {
+        const commit = () => editSlot(inp.getAttribute('data-editlabel'), { label: inp.value.trim() || 'Slot' });
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') inp.blur(); });
+    });
+    elements.slotList.querySelectorAll('[data-edittime]').forEach((inp) => {
+        inp.addEventListener('change', () => {
+            if (/^\d{1,2}:\d{2}$/.test(inp.value)) editSlot(inp.getAttribute('data-edittime'), { time: inp.value });
+        });
+    });
 
     // Plan panel
     if (armed && plan && slot) {
@@ -1805,16 +1844,18 @@ function renderSlots() {
         const day = isTomorrow(plan.targetAt) ? ' tomorrow' : '';
         elements.slotPlanArmed.textContent = `${slot.label} → starts${day} at ${formatSlotClock(plan.targetAt)}`;
 
+        // Steps read chronologically: current session ends → filler windows
+        // run through your waking hours → short pre-dawn idle → target opens.
         const steps = [];
         if (plan.windowActive) {
             steps.push(`Current session ends ${formatSlotClock(plan.currentSessionEnd)}.`);
         }
-        if (plan.hasIdle) {
-            steps.push(`Stay idle ${formatSlotClock(plan.idleFrom)} → ${formatSlotClock(plan.idleTo)} (don't send anything).`);
-        }
         if (plan.numFillers > 0) {
             const fillers = plan.triggerTimes.slice(0, plan.numFillers).map(formatSlotClock).join(', ');
             steps.push(`Filler window${plan.numFillers > 1 ? 's' : ''} auto-open at ${fillers} — yours to use.`);
+        }
+        if (plan.hasIdle) {
+            steps.push(`Idle ${formatSlotClock(plan.idleFrom)} → ${formatSlotClock(plan.idleTo)} — stay off Claude (usually while asleep).`);
         }
         steps.push(`Auto-start your window at ${formatSlotClock(plan.targetAt)}.`);
         elements.slotPlanSteps.innerHTML = steps.map((t) => `<div class="slot-step">• ${escapeHtml(t)}</div>`).join('');

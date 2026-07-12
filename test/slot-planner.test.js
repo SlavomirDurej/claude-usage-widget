@@ -38,7 +38,7 @@ test('active window ending before target, gap < 5h -> pure idle, single send', (
   assert.strictEqual(plan.idleTo.getTime(), at(BASE, 8, 0).getTime());
 });
 
-test('active window ending 00:00, target 08:00 -> one filler at 03:00', () => {
+test('active window ending 00:00, target 08:00 -> filler at 00:00, idle 05:00-08:00', () => {
   // now 23:00 previous day, window ends 00:00 next day.
   const now = at(BASE, 23, 0, -1);
   const resetsAt = at(BASE, 0, 0).toISOString(); // 00:00 today
@@ -46,11 +46,29 @@ test('active window ending 00:00, target 08:00 -> one filler at 03:00', () => {
 
   assert.strictEqual(plan.numFillers, 1);
   assert.strictEqual(plan.triggerTimes.length, 2);
-  assert.strictEqual(plan.triggerTimes[0].getTime(), at(BASE, 3, 0).getTime());
+  // End placement: filler opens immediately at 00:00, idle sits before target.
+  assert.strictEqual(plan.triggerTimes[0].getTime(), at(BASE, 0, 0).getTime());
   assert.strictEqual(plan.triggerTimes[1].getTime(), at(BASE, 8, 0).getTime());
-  // idle sits at the front: 00:00 -> 03:00
-  assert.strictEqual(plan.idleFrom.getTime(), at(BASE, 0, 0).getTime());
-  assert.strictEqual(plan.idleTo.getTime(), at(BASE, 3, 0).getTime());
+  // idle sits at the end: 05:00 -> 08:00 (pre-dawn)
+  assert.strictEqual(plan.idleFrom.getTime(), at(BASE, 5, 0).getTime());
+  assert.strictEqual(plan.idleTo.getTime(), at(BASE, 8, 0).getTime());
+});
+
+test('idle lands in pre-dawn hours for a morning target (waking hours stay usable)', () => {
+  // Current session ends 11:00 AM, target 06:00 next day. 19h gap, 3 fillers.
+  const now = at(BASE, 10, 0);
+  const resetsAt = at(BASE, 11, 0).toISOString();
+  const plan = computePlan({ slotTime: '06:00', resetsAt, now });
+
+  assert.strictEqual(plan.numFillers, 3);
+  // Fillers run 11:00, 16:00, 21:00 — covering the whole waking day/evening.
+  assert.strictEqual(plan.triggerTimes[0].getTime(), at(BASE, 11, 0).getTime());
+  assert.strictEqual(plan.triggerTimes[1].getTime(), at(BASE, 16, 0).getTime());
+  assert.strictEqual(plan.triggerTimes[2].getTime(), at(BASE, 21, 0).getTime());
+  // Idle is 02:00 -> 06:00 next day (asleep), then the target opens at 06:00.
+  assert.strictEqual(plan.idleFrom.getTime(), at(BASE, 2, 0, 1).getTime());
+  assert.strictEqual(plan.idleTo.getTime(), at(BASE, 6, 0, 1).getTime());
+  assert.strictEqual(plan.triggerTimes[3].getTime(), at(BASE, 6, 0, 1).getTime());
 });
 
 test('no active window, target later today -> idle until target, single send', () => {
@@ -92,14 +110,26 @@ test('armed exactly at target with no window -> immediate single trigger', () =>
   assert.strictEqual(plan.hasIdle, false);
 });
 
-test('fillers are contiguous, each 5h apart, last lands exactly on target', () => {
+test('fillers are contiguous 5h apart; final trigger is the target after the idle', () => {
   const now = at(BASE, 9, 30);
   const plan = computePlan({ slotTime: '08:00', resetsAt: null, now });
   const t = plan.triggerTimes;
-  for (let i = 1; i < t.length; i++) {
+  // The filler triggers (all but the last) are exactly 5h apart.
+  for (let i = 1; i < plan.numFillers; i++) {
     assert.strictEqual(t[i].getTime() - t[i - 1].getTime(), FIVE_HOURS_MS);
   }
-  assert.strictEqual(t[t.length - 1].getTime(), plan.targetAt.getTime());
+  // The last trigger is the target.
+  const last = t[t.length - 1];
+  assert.strictEqual(last.getTime(), plan.targetAt.getTime());
+  // The leftover idle slack is always less than a full window.
+  const idleMs = plan.idleTo.getTime() - plan.idleFrom.getTime();
+  assert.ok(idleMs >= 0 && idleMs < FIVE_HOURS_MS);
+  // Idle begins exactly when the last filler ends (its start + 5h) and ends at target.
+  if (plan.numFillers > 0) {
+    const lastFillerStart = t[plan.numFillers - 1].getTime();
+    assert.strictEqual(plan.idleFrom.getTime(), lastFillerStart + FIVE_HOURS_MS);
+  }
+  assert.strictEqual(plan.idleTo.getTime(), plan.targetAt.getTime());
 });
 
 console.log(`\n${passed} tests passed.`);
