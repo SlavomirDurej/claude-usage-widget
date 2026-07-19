@@ -3,6 +3,7 @@ const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
+const { normalizeUsageLimits } = require('./src/normalize-usage-limits');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
@@ -82,6 +83,7 @@ function storeUsageHistory(data) {
     weekly: data.seven_day?.utilization || 0,
     sonnet: data.seven_day_sonnet?.utilization || 0,
     opus: data.seven_day_opus?.utilization || 0,
+    fable: data.seven_day_fable?.utilization || 0,
     cowork: data.seven_day_cowork?.utilization || 0,
     design: data.seven_day_omelette?.utilization || 0,
     oauthApps: data.seven_day_oauth_apps?.utilization || 0,
@@ -1342,6 +1344,12 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   }
 
   const data = usageResult.value;
+
+  // Normalize per-model weekly limits (e.g. Fable) from the `limits` array into
+  // synthetic seven_day_<name> top-level fields BEFORE they are stored to
+  // history or returned to the renderer, so both consumers share one source of
+  // truth. Must run before storeUsageHistory() and before `return data`.
+  normalizeUsageLimits(data);
 
   // Merge overage spending data into data.extra_usage
   if (overageResult.status === 'fulfilled' && overageResult.value) {

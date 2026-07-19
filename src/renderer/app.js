@@ -548,6 +548,7 @@ function formatCurrency(amountCents, currencyCode) {
 const EXTRA_ROW_CONFIG = {
     seven_day_sonnet: { label: 'Sonnet (7d)', color: 'sonnet' },
     seven_day_opus: { label: 'Opus (7d)', color: 'opus' },
+    seven_day_fable: { label: 'Fable (7d)', color: 'fable' },
     seven_day_cowork: { label: 'Cowork (7d)', color: 'cowork' },
     seven_day_omelette: { label: 'Design (7d)', color: 'design' },
     seven_day_oauth_apps: { label: 'OAuth Apps (7d)', color: 'oauth' },
@@ -730,14 +731,17 @@ function buildExtraRows(data) {
 }
 
 function refreshExtraTimers() {
-    const timerTexts = elements.extraRows.querySelectorAll('.timer-text');
-    const timerCircles = elements.extraRows.querySelectorAll('.timer-progress');
-
-    timerTexts.forEach((textEl, i) => {
+    // Pair each row's timer text with its own circle. Pairing the two
+    // querySelectorAll lists by index breaks as soon as a row has a text but
+    // no circle (the extra_usage row), which shifts every later row's circle
+    // and leaves those timers stuck at --:--.
+    elements.extraRows.querySelectorAll('.usage-section').forEach((row) => {
+        const textEl = row.querySelector('.timer-text');
+        const circleEl = row.querySelector('.timer-progress');
+        if (!textEl || !circleEl) return;
         const resetsAt = textEl.dataset.resets;
         const totalMinutes = parseInt(textEl.dataset.total);
-        const circleEl = timerCircles[i];
-        if (resetsAt && circleEl) {
+        if (resetsAt) {
             updateTimer(circleEl, textEl, resetsAt, totalMinutes);
         }
     });
@@ -761,6 +765,24 @@ function resizeWidget(bannerVisible) {
 }
 
 function normalizeUsageData(data) {
+    // The synthetic seven_day_<name> fields for scoped weekly limits (e.g.
+    // Fable) are produced centrally in main.js (normalize-usage-limits.js), so
+    // `data` already carries them here. This renderer step only ensures every
+    // scoped model has a matching EXTRA_ROW_CONFIG entry: statically known
+    // models (Fable) already do; any unknown model is registered generically
+    // (label "<DisplayName> (7d)", fallback color) while keeping extra_usage as
+    // the last row so it stays grouped below the model rows.
+    for (const limit of (data && data.limits) || []) {
+        if (!limit || limit.kind !== 'weekly_scoped' || limit.percent == null) continue;
+        const displayName = limit.scope && limit.scope.model && limit.scope.model.display_name;
+        if (!displayName) continue;
+        const key = 'seven_day_' + String(displayName).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        if (EXTRA_ROW_CONFIG[key]) continue; // already known (e.g. seven_day_fable)
+        const extraUsage = EXTRA_ROW_CONFIG.extra_usage;
+        delete EXTRA_ROW_CONFIG.extra_usage;
+        EXTRA_ROW_CONFIG[key] = { label: `${displayName} (7d)`, color: 'scoped' };
+        EXTRA_ROW_CONFIG.extra_usage = extraUsage;
+    }
     return data;
 }
 
@@ -1268,6 +1290,7 @@ function renderChart(history) {
 
     const showSonnet = isExpanded && !!latestUsageData?.seven_day_sonnet;
     const showOpus = isExpanded && !!latestUsageData?.seven_day_opus;
+    const showFable = isExpanded && !!latestUsageData?.seven_day_fable;
     const showCowork = isExpanded && !!latestUsageData?.seven_day_cowork;
     const showDesign = isExpanded && !!latestUsageData?.seven_day_omelette;
     const showOAuthApps = isExpanded && !!latestUsageData?.seven_day_oauth_apps;
@@ -1276,6 +1299,7 @@ function renderChart(history) {
         const values = [entry.session, entry.weekly];
         if (showSonnet) values.push(entry.sonnet || 0);
         if (showOpus) values.push(entry.opus || 0);
+        if (showFable) values.push(entry.fable || 0);
         if (showCowork) values.push(entry.cowork || 0);
         if (showDesign) values.push(entry.design || 0);
         if (showOAuthApps) values.push(entry.oauthApps || 0);
@@ -1333,6 +1357,23 @@ function renderChart(history) {
                 label: 'Opus',
                 data: history.map((entry) => ({ x: entry.timestamp, y: entry.opus || 0 })),
                 borderColor: '#f59e0b',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                stepped: true,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                pointHitRadius: 10
+            });
+        }
+    }
+
+    if (showFable) {
+        const fableData = history.map((entry) => entry.fable || 0);
+        if (fableData.some((value) => value > 0)) {
+            datasets.push({
+                label: 'Fable',
+                data: history.map((entry) => ({ x: entry.timestamp, y: entry.fable || 0 })),
+                borderColor: '#d946ef',
                 backgroundColor: 'transparent',
                 borderWidth: 2,
                 stepped: true,

@@ -659,6 +659,17 @@ body.theme-light .graph-btn.active {
     box-shadow: 0 0 10px rgba(244, 63, 94, 0.3);
 }
 
+.progress-fill.fable {
+    background: linear-gradient(90deg, #d946ef 0%, #e879f9 100%);
+    box-shadow: 0 0 10px rgba(217, 70, 239, 0.3);
+}
+
+/* Fallback color for scoped weekly-limit models not statically configured */
+.progress-fill.scoped {
+    background: linear-gradient(90deg, #64748b 0%, #94a3b8 100%);
+    box-shadow: 0 0 10px rgba(100, 116, 139, 0.3);
+}
+
 .progress-fill.cowork {
     background: linear-gradient(90deg, #06b6d4 0%, #22d3ee 100%);
     box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
@@ -727,6 +738,14 @@ body.theme-light .graph-btn.active {
 
 .timer-progress.sonnet {
     stroke: #f43f5e;
+}
+
+.timer-progress.fable {
+    stroke: #d946ef;
+}
+
+.timer-progress.scoped {
+    stroke: #64748b;
 }
 
 .timer-progress.cowork {
