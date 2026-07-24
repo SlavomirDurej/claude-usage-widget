@@ -1249,8 +1249,10 @@ function isNewerVersion(remote, local) {
     if (r.patch !== l.patch) return r.patch > l.patch;
 
     // Same version numbers — notify if local is a pre-release and remote is stable
-    // e.g. local=1.7.5-rc.1, remote=1.7.5 → user should be told stable is out
-    return l.preRelease !== null;
+    // e.g. local=1.7.5-rc.1, remote=1.7.5 → user should be told stable is out.
+    // Exception: -fable.* fork builds carry features ON TOP of the same-numbered
+    // upstream release; offering the upstream stable would be a downgrade.
+    return l.preRelease !== null && !l.preRelease.startsWith('fable');
   } catch { return false; }
 }
 
