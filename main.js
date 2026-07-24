@@ -4,6 +4,7 @@ const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
 const { normalizeUsageLimits } = require('./src/normalize-usage-limits');
+const { readCodexUsage } = require('./src/codex-usage');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
@@ -87,7 +88,9 @@ function storeUsageHistory(data) {
     cowork: data.seven_day_cowork?.utilization || 0,
     design: data.seven_day_omelette?.utilization || 0,
     oauthApps: data.seven_day_oauth_apps?.utilization || 0,
-    extraUsage: data.extra_usage?.utilization || 0
+    extraUsage: data.extra_usage?.utilization || 0,
+    codexFive: data.codex_five_hour?.utilization || 0,
+    codexSeven: data.codex_seven_day?.utilization || 0
   });
 
   // Rotation: apply both time-based and count-based limits
@@ -1350,6 +1353,20 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // history or returned to the renderer, so both consumers share one source of
   // truth. Must run before storeUsageHistory() and before `return data`.
   normalizeUsageLimits(data);
+
+  // Merge local Codex CLI (ChatGPT) usage windows as codex_five_hour /
+  // codex_seven_day. Read from ~/.codex/sessions — independent of the Claude
+  // account, so it must never break the Claude path (try/catch) and must never
+  // clobber a field the Claude payload already carries (defensive null-check).
+  try {
+    const codex = readCodexUsage();
+    if (data.codex_five_hour == null && codex.codex_five_hour) {
+      data.codex_five_hour = codex.codex_five_hour;
+    }
+    if (data.codex_seven_day == null && codex.codex_seven_day) {
+      data.codex_seven_day = codex.codex_seven_day;
+    }
+  } catch {}
 
   // Merge overage spending data into data.extra_usage
   if (overageResult.status === 'fulfilled' && overageResult.value) {

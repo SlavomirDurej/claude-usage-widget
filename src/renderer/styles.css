@@ -685,6 +685,13 @@ body.theme-light .graph-btn.active {
     box-shadow: 0 0 10px rgba(249, 115, 22, 0.3);
 }
 
+/* Codex (ChatGPT) — lime, deliberately NOT OpenAI-green (#10a37f) which would
+   collide with the extra-usage green (#10b981). */
+.progress-fill.codex {
+    background: linear-gradient(90deg, #84cc16 0%, #a3e635 100%);
+    box-shadow: 0 0 10px rgba(132, 204, 22, 0.3);
+}
+
 /* Threshold color overrides for warning and danger states */
 .progress-fill.warning {
     background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
@@ -758,6 +765,10 @@ body.theme-light .graph-btn.active {
 
 .timer-progress.oauth {
     stroke: #f97316;
+}
+
+.timer-progress.codex {
+    stroke: #84cc16;
 }
 
 .timer-text {

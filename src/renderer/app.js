@@ -552,6 +552,12 @@ const EXTRA_ROW_CONFIG = {
     seven_day_cowork: { label: 'Cowork (7d)', color: 'cowork' },
     seven_day_omelette: { label: 'Design (7d)', color: 'design' },
     seven_day_oauth_apps: { label: 'OAuth Apps (7d)', color: 'oauth' },
+    // Codex CLI (ChatGPT) windows. Ordered before extra_usage so extra_usage
+    // stays the last row. The timer duration in buildExtraRows() is derived via
+    // key.includes('seven_day'): codex_five_hour -> false -> 5h,
+    // codex_seven_day -> true -> 7d, which matches these windows exactly.
+    codex_five_hour: { label: 'Codex (5h)', color: 'codex' },
+    codex_seven_day: { label: 'Codex (7d)', color: 'codex' },
     extra_usage: { label: 'Extra Usage', color: 'extra' },
 };
 
@@ -1294,6 +1300,8 @@ function renderChart(history) {
     const showCowork = isExpanded && !!latestUsageData?.seven_day_cowork;
     const showDesign = isExpanded && !!latestUsageData?.seven_day_omelette;
     const showOAuthApps = isExpanded && !!latestUsageData?.seven_day_oauth_apps;
+    const showCodexFive = isExpanded && !!latestUsageData?.codex_five_hour;
+    const showCodexSeven = isExpanded && !!latestUsageData?.codex_seven_day;
     const showExtraUsage = isExpanded && !!latestUsageData?.extra_usage;
     const allValues = history.flatMap((entry) => {
         const values = [entry.session, entry.weekly];
@@ -1303,6 +1311,8 @@ function renderChart(history) {
         if (showCowork) values.push(entry.cowork || 0);
         if (showDesign) values.push(entry.design || 0);
         if (showOAuthApps) values.push(entry.oauthApps || 0);
+        if (showCodexFive) values.push(entry.codexFive || 0);
+        if (showCodexSeven) values.push(entry.codexSeven || 0);
         if (showExtraUsage) values.push(entry.extraUsage || 0);
         return values;
     });
@@ -1425,6 +1435,44 @@ function renderChart(history) {
                 label: 'OAuth Apps',
                 data: history.map((entry) => ({ x: entry.timestamp, y: entry.oauthApps || 0 })),
                 borderColor: '#f97316',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                stepped: true,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                pointHitRadius: 10
+            });
+        }
+    }
+
+    // Codex 5h: solid lime. Codex 7d: same lime but dashed (borderDash) so the
+    // two Codex lines stay distinguishable from each other while sharing one
+    // hue that reads as a single "Codex" family in the legend.
+    if (showCodexFive) {
+        const codexFiveData = history.map((entry) => entry.codexFive || 0);
+        if (codexFiveData.some((value) => value > 0)) {
+            datasets.push({
+                label: 'Codex 5h',
+                data: history.map((entry) => ({ x: entry.timestamp, y: entry.codexFive || 0 })),
+                borderColor: '#84cc16',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                stepped: true,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                pointHitRadius: 10
+            });
+        }
+    }
+
+    if (showCodexSeven) {
+        const codexSevenData = history.map((entry) => entry.codexSeven || 0);
+        if (codexSevenData.some((value) => value > 0)) {
+            datasets.push({
+                label: 'Codex 7d',
+                data: history.map((entry) => ({ x: entry.timestamp, y: entry.codexSeven || 0 })),
+                borderColor: '#84cc16',
+                borderDash: [5, 3],
                 backgroundColor: 'transparent',
                 borderWidth: 2,
                 stepped: true,
