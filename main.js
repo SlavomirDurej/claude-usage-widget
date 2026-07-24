@@ -58,9 +58,19 @@ let weeklyTray = null;   // Tray icon for Weekly usage
 
 const WIDGET_WIDTH = process.platform === 'darwin' ? 590 : 560;
 const WIDGET_HEIGHT = 155;
+const COMPACT_WIDTH = 290;
+const COMPACT_HEIGHT = 105;
+const COMPACT_ROW_HEIGHT = 28; // extra height needed for the optional Fable row
 const HISTORY_RETENTION_DAYS = 8;
 const CHART_DAYS = 7;
 const MAX_HISTORY_SAMPLES = 10000; // Cap total samples to prevent unbounded growth
+
+// Compact mode always shows Session + Weekly; grows by one row when the
+// account has a scoped Fable weekly limit (data.seven_day_fable).
+function getCompactHeight() {
+  const data = store.get('latestUsageData');
+  return data?.seven_day_fable ? COMPACT_HEIGHT + COMPACT_ROW_HEIGHT : COMPACT_HEIGHT;
+}
 
 function storeUsageHistory(data) {
   // Skip write if the session is invalid — a live session always has resets_at timestamps.
@@ -82,6 +92,7 @@ function storeUsageHistory(data) {
     weekly: data.seven_day?.utilization || 0,
     sonnet: data.seven_day_sonnet?.utilization || 0,
     opus: data.seven_day_opus?.utilization || 0,
+    fable: data.seven_day_fable?.utilization || 0,
     cowork: data.seven_day_cowork?.utilization || 0,
     design: data.seven_day_omelette?.utilization || 0,
     oauthApps: data.seven_day_oauth_apps?.utilization || 0,
@@ -995,8 +1006,8 @@ ipcMain.on('show-notification', (event, { title, body }) => {
 ipcMain.on('set-compact-mode', (event, compact) => {
   if (mainWindow) {
     const bounds = mainWindow.getBounds();
-    const width = compact ? 290 : WIDGET_WIDTH;
-    const height = compact ? 105 : WIDGET_HEIGHT;
+    const width = compact ? COMPACT_WIDTH : WIDGET_WIDTH;
+    const height = compact ? getCompactHeight() : WIDGET_HEIGHT;
     mainWindow.setBounds({ x: bounds.x, y: bounds.y, width, height });
   }
 });
@@ -1343,6 +1354,23 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
 
   const data = usageResult.value;
 
+  // Some accounts report per-model weekly limits (e.g. Fable) via the generic
+  // `limits` array instead of a dedicated `seven_day_<model>` field. Surface
+  // those as synthetic seven_day_<model> entries so the rest of the pipeline
+  // (history storage, extra rows, chart) can treat them like Sonnet/Opus.
+  if (Array.isArray(data.limits)) {
+    for (const limit of data.limits) {
+      const modelName = limit?.scope?.model?.display_name;
+      if (limit.kind === 'weekly_scoped' && modelName) {
+        const modelKey = modelName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        data[`seven_day_${modelKey}`] = {
+          utilization: limit.percent,
+          resets_at: limit.resets_at,
+        };
+      }
+    }
+  }
+
   // Merge overage spending data into data.extra_usage
   if (overageResult.status === 'fulfilled' && overageResult.value) {
     const overage = overageResult.value;
@@ -1391,6 +1419,12 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
 
   // Update tray icon with current usage data
   updateTrayIcon(data);
+
+  // Keep the compact window sized correctly if the Fable row just appeared/disappeared
+  if (mainWindow && !mainWindow.isDestroyed() && store.get('settings.compactMode', false)) {
+    const bounds = mainWindow.getBounds();
+    mainWindow.setBounds({ x: bounds.x, y: bounds.y, width: COMPACT_WIDTH, height: getCompactHeight() });
+  }
 
   // Re-assert always-on-top after hidden BrowserWindows from fetchViaWindow
   // are destroyed — creating/destroying BrowserWindows can temporarily disrupt

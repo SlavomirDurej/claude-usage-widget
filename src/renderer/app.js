@@ -99,6 +99,9 @@ const elements = {
     compactSessionPct: document.getElementById('compactSessionPct'),
     compactWeeklyFill: document.getElementById('compactWeeklyFill'),
     compactWeeklyPct: document.getElementById('compactWeeklyPct'),
+    compactFableRow: document.getElementById('compactFableRow'),
+    compactFableFill: document.getElementById('compactFableFill'),
+    compactFablePct: document.getElementById('compactFablePct'),
     compactSettingsOverlay: document.getElementById('compactSettingsOverlay'),
     closeCompactSettingsBtn: document.getElementById('closeCompactSettingsBtn')
 };
@@ -548,6 +551,7 @@ function formatCurrency(amountCents, currencyCode) {
 const EXTRA_ROW_CONFIG = {
     seven_day_sonnet: { label: 'Sonnet (7d)', color: 'sonnet' },
     seven_day_opus: { label: 'Opus (7d)', color: 'opus' },
+    seven_day_fable: { label: 'Fable (7d)', color: 'fable' },
     seven_day_cowork: { label: 'Cowork (7d)', color: 'cowork' },
     seven_day_omelette: { label: 'Design (7d)', color: 'design' },
     seven_day_oauth_apps: { label: 'OAuth Apps (7d)', color: 'oauth' },
@@ -923,6 +927,19 @@ function updateCompactBars(data) {
     elements.compactWeeklyFill.className = 'compact-bar-fill weekly';
     if (weeklyPct >= dangerThreshold) elements.compactWeeklyFill.classList.add('danger');
     else if (weeklyPct >= warnThreshold) elements.compactWeeklyFill.classList.add('warning');
+
+    // Fable — only shown when the account has a scoped Fable weekly limit
+    if (data.seven_day_fable) {
+        const fablePct = Math.min(Math.max(data.seven_day_fable.utilization || 0, 0), 100);
+        elements.compactFableRow.style.display = '';
+        elements.compactFableFill.style.width = `${fablePct}%`;
+        elements.compactFablePct.textContent = `${Math.round(fablePct)}%`;
+        elements.compactFableFill.className = 'compact-bar-fill fable';
+        if (fablePct >= dangerThreshold) elements.compactFableFill.classList.add('danger');
+        else if (fablePct >= warnThreshold) elements.compactFableFill.classList.add('warning');
+    } else {
+        elements.compactFableRow.style.display = 'none';
+    }
 }
 // Persist compact mode setting without touching the rest of settings — debounced
 let _saveCompactTimer = null;
@@ -1268,6 +1285,7 @@ function renderChart(history) {
 
     const showSonnet = isExpanded && !!latestUsageData?.seven_day_sonnet;
     const showOpus = isExpanded && !!latestUsageData?.seven_day_opus;
+    const showFable = isExpanded && !!latestUsageData?.seven_day_fable;
     const showCowork = isExpanded && !!latestUsageData?.seven_day_cowork;
     const showDesign = isExpanded && !!latestUsageData?.seven_day_omelette;
     const showOAuthApps = isExpanded && !!latestUsageData?.seven_day_oauth_apps;
@@ -1276,6 +1294,7 @@ function renderChart(history) {
         const values = [entry.session, entry.weekly];
         if (showSonnet) values.push(entry.sonnet || 0);
         if (showOpus) values.push(entry.opus || 0);
+        if (showFable) values.push(entry.fable || 0);
         if (showCowork) values.push(entry.cowork || 0);
         if (showDesign) values.push(entry.design || 0);
         if (showOAuthApps) values.push(entry.oauthApps || 0);
@@ -1333,6 +1352,23 @@ function renderChart(history) {
                 label: 'Opus',
                 data: history.map((entry) => ({ x: entry.timestamp, y: entry.opus || 0 })),
                 borderColor: '#f59e0b',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                stepped: true,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                pointHitRadius: 10
+            });
+        }
+    }
+
+    if (showFable) {
+        const fableData = history.map((entry) => entry.fable || 0);
+        if (fableData.some((value) => value > 0)) {
+            datasets.push({
+                label: 'Fable',
+                data: history.map((entry) => ({ x: entry.timestamp, y: entry.fable || 0 })),
+                borderColor: '#c026d3',
                 backgroundColor: 'transparent',
                 borderWidth: 2,
                 stepped: true,
