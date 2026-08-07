@@ -214,6 +214,31 @@
                             </div>
                         </div>
                     </div>
+                    <div class="compact-row" id="compactFableRow" style="display: none;">
+                        <span class="compact-label">Fable</span>
+                        <div class="compact-bar-wrap">
+                            <div class="compact-bar-bg">
+                                <div class="compact-bar-fill fable" id="compactFableFill" style="width: 0%"></div>
+                                <span class="compact-pct" id="compactFablePct">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Spend toggle — collapsed by default; opening it triggers a fetch
+                         (spend data isn't polled while collapsed, see main.js) -->
+                    <div class="compact-expand-toggle" id="compactSpendToggle" title="Show spend">
+                        <svg class="compact-expand-arrow" id="compactSpendArrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </div>
+                    <div class="compact-row" id="compactSpendRow" style="display: none;">
+                        <span class="compact-label">Spend</span>
+                        <div class="compact-bar-wrap">
+                            <div class="compact-bar-bg">
+                                <div class="compact-bar-fill spend" id="compactSpendFill" style="width: 0%"></div>
+                                <span class="compact-pct" id="compactSpendPct">0%</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 

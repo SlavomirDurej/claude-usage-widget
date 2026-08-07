@@ -1,43 +1,67 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage, screen } = require('electron');
 const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
+const { normalizeUsageLimits } = require('./src/normalize-usage-limits');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
 
-// Migration: Handle old encrypted config files from v1.7.0 and earlier
-// Must happen BEFORE creating Store instance to prevent parse errors
-const fs = require('fs');
-const os = require('os');
-
-// electron-store uses different paths per platform
-let configPath;
-if (process.platform === 'darwin') {
-  configPath = path.join(os.homedir(), 'Library', 'Application Support', 'claude-usage-widget', 'config.json');
-} else if (process.platform === 'win32') {
-  configPath = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'claude-usage-widget', 'config.json');
-} else {
-  // Linux
-  configPath = path.join(os.homedir(), '.config', 'claude-usage-widget', 'config.json');
+// Required for Windows taskbar features (notifications, Jump List tasks) to register
+// reliably under one stable identity — without this, dev (npm start) and packaged
+// builds show up as generic "Electron" and custom Jump List tasks may not appear.
+// Matches package.json build.appId so dev and packaged runs share the same identity.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.claudeusage.widget');
 }
 
-try {
-  if (fs.existsSync(configPath)) {
-    const rawData = fs.readFileSync(configPath, 'utf-8');
-    // Check if file looks encrypted (contains non-JSON garbage or doesn't start with {)
-    if (rawData.includes('\u0000') || !rawData.trim().startsWith('{')) {
-      console.log('[Migration] Detected old encrypted config from v1.7.0, deleting for fresh start');
-      fs.unlinkSync(configPath);
-    }
+
+// Profile isolation: --profile=<name> launches a fully separate instance with its own
+// session, cookies, and settings. Must be set before anything reads app.getPath('userData').
+const fs = require('fs');
+const os = require('os');
+const profileArg = process.argv.find(a => a.startsWith('--profile='));
+if (profileArg) {
+  const profileName = profileArg.split('=')[1].replace(/[^a-zA-Z0-9_-]/g, '_');
+  const profilePath = path.join(app.getPath('userData'), 'profiles', profileName);
+  app.setPath('userData', profilePath);
+  // Always logged (not gated behind DEBUG_LOG) so multi-instance bug reports can be
+  // triaged from terminal output alone: confirms which profile resolved to which
+  // userData root, distinguishing profile-folder isolation from org-ID isolation.
+  console.log(`[Profile] Using profile "${profileName}" -> userData: ${profilePath}`);
+}
+
+// Migration: Handle old encrypted config files from v1.7.0 and earlier
+// Must happen BEFORE creating Store instance to prevent parse errors.
+// Skipped for profile instances — they are always fresh installs.
+if (!profileArg) {
+  let configPath;
+  if (process.platform === 'darwin') {
+    configPath = path.join(os.homedir(), 'Library', 'Application Support', 'claude-usage-widget', 'config.json');
+  } else if (process.platform === 'win32') {
+    configPath = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'claude-usage-widget', 'config.json');
+  } else {
+    // Linux
+    configPath = path.join(os.homedir(), '.config', 'claude-usage-widget', 'config.json');
   }
-} catch (err) {
-  console.error('[Migration] Error checking config file:', err.message);
-  // If we can't read it, try to delete it
+
   try {
-    if (fs.existsSync(configPath)) fs.unlinkSync(configPath);
-  } catch {}
+    if (fs.existsSync(configPath)) {
+      const rawData = fs.readFileSync(configPath, 'utf-8');
+      // Check if file looks encrypted (contains non-JSON garbage or doesn't start with {)
+      if (rawData.includes('\u0000') || !rawData.trim().startsWith('{')) {
+        console.log('[Migration] Detected old encrypted config from v1.7.0, deleting for fresh start');
+        fs.unlinkSync(configPath);
+      }
+    }
+  } catch (err) {
+    console.error('[Migration] Error checking config file:', err.message);
+    // If we can't read it, try to delete it
+    try {
+      if (fs.existsSync(configPath)) fs.unlinkSync(configPath);
+    } catch {}
+  }
 }
 
 // Non-sensitive settings storage (no encryption needed)
@@ -56,9 +80,44 @@ let mainWindow = null;
 let sessionTray = null;  // Tray icon for Session usage
 let weeklyTray = null;   // Tray icon for Weekly usage
 
+// Set on 'before-quit', which fires before any window's 'close' event on
+// every genuine quit path (Exit menu item, Cmd+Q, OS shutdown). Without
+// this, app.quit() can't be told apart from a user clicking the close
+// button to just minimize -- both arrive as the same window 'close' event.
+let isQuitting = false;
+
+// Single source of truth for "is there a recovery surface to bring the
+// window back via". Hiding/minimizing-to-tray is only ever safe when this
+// is true; otherwise it must behave like a normal close/minimize so the
+// taskbar (or the act of relaunching) can still reach it.
+function hasTrayIcon() {
+  return (sessionTray && !sessionTray.isDestroyed()) || (weeklyTray && !weeklyTray.isDestroyed());
+}
+
 const WIDGET_WIDTH = process.platform === 'darwin' ? 590 : 560;
 const WIDGET_HEIGHT = 155;
+const COMPACT_WIDTH = 290;
+const COMPACT_HEIGHT = 105;
+const COMPACT_ROW_HEIGHT = 28; // extra height per optional row (Fable, Spend)
+const COMPACT_CHEVRON_HEIGHT = 15; // the always-visible spend toggle chevron
+const COMPACT_BANNER_HEIGHT = 28; // matches BANNER_HEIGHT in the renderer's resizeWidget()
 const HISTORY_RETENTION_DAYS = 8;
+
+// Compact mode always shows Session + Weekly plus the spend chevron; grows by
+// one row when the account has a scoped Fable weekly limit
+// (data.seven_day_fable, populated by normalize-usage-limits.js), by another
+// when the user has toggled the spend row open (settings.compactSpendOpen),
+// and by the banner height when an update is available (updateBannerVisible,
+// set by the check-for-update handler below — compact mode has no separate
+// update-check path of its own, it shares this one).
+function getCompactHeight() {
+  const data = store.get('latestUsageData');
+  let height = COMPACT_HEIGHT + COMPACT_CHEVRON_HEIGHT;
+  if (data?.seven_day_fable) height += COMPACT_ROW_HEIGHT;
+  if (store.get('settings.compactSpendOpen', false)) height += COMPACT_ROW_HEIGHT;
+  if (store.get('updateBannerVisible', false)) height += COMPACT_BANNER_HEIGHT;
+  return height;
+}
 const CHART_DAYS = 7;
 const MAX_HISTORY_SAMPLES = 10000; // Cap total samples to prevent unbounded growth
 
@@ -82,6 +141,7 @@ function storeUsageHistory(data) {
     weekly: data.seven_day?.utilization || 0,
     sonnet: data.seven_day_sonnet?.utilization || 0,
     opus: data.seven_day_opus?.utilization || 0,
+    fable: data.seven_day_fable?.utilization || 0, // requires feature/fable-usage (normalize-usage-limits.js)
     cowork: data.seven_day_cowork?.utilization || 0,
     design: data.seven_day_omelette?.utilization || 0,
     oauthApps: data.seven_day_oauth_apps?.utilization || 0,
@@ -152,8 +212,76 @@ async function setSessionCookie(sessionKey) {
   debugLog('sessionKey cookie set in Electron session');
 }
 
+// Returns true if a rect at (x, y) with the given width/height overlaps
+// at least one currently connected display's work area. Used to recover
+// from saved window positions left over from a different monitor setup
+// (e.g. switching from an ultrawide to a laptop-only display).
+function isPositionOnScreen(x, y, width, height) {
+  const rect = { x, y, width, height };
+  return screen.getAllDisplays().some((display) => {
+    const area = display.workArea;
+    return (
+      rect.x < area.x + area.width &&
+      rect.x + rect.width > area.x &&
+      rect.y < area.y + area.height &&
+      rect.y + rect.height > area.y
+    );
+  });
+}
+
+// Centered position on the primary display's work area, for the given window size.
+function getCenteredPosition(width, height) {
+  const area = screen.getPrimaryDisplay().workArea;
+  return {
+    x: Math.round(area.x + (area.width - width) / 2),
+    y: Math.round(area.y + (area.height - height) / 2)
+  };
+}
+
+// True only if the window is actually shown AND within some display's bounds.
+// Electron's isVisible() alone is true even when the window is fully
+// off-screen, which previously made the tray click-to-hide toggle treat an
+// invisible-to-the-user off-screen window as "currently shown."
+function isMainWindowShownOnScreen() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (!mainWindow.isVisible() || mainWindow.isMinimized()) return false;
+  const bounds = mainWindow.getBounds();
+  return isPositionOnScreen(bounds.x, bounds.y, bounds.width, bounds.height);
+}
+
+// Implicit/automatic triggers (tray left-click, taskbar left-click/restore,
+// app activate, "Show Widget" menu item). Re-validates the window's current
+// position against connected displays first and only moves it if it's
+// actually off-screen — a valid custom position is left untouched. This is
+// the single recovery path for the whole app; any future trigger that brings
+// the window forward should route through here too.
+function showMainWindowSmart() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow();
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    return;
+  }
+  const bounds = mainWindow.getBounds();
+  if (!isPositionOnScreen(bounds.x, bounds.y, bounds.width, bounds.height)) {
+    const { x, y } = getCenteredPosition(bounds.width, bounds.height);
+    debugLog('[Window] Recentering off-screen window from', bounds, 'to', { x, y });
+    mainWindow.setPosition(x, y);
+    store.set('windowPosition', { x, y });
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
 function createMainWindow() {
-  const savedPosition = store.get('windowPosition');
+  let savedPosition = store.get('windowPosition');
+  if (savedPosition && !isPositionOnScreen(savedPosition.x, savedPosition.y, WIDGET_WIDTH, WIDGET_HEIGHT)) {
+    debugLog('[Window] Saved position', savedPosition, 'is off-screen on current display setup; centering instead');
+    savedPosition = null;
+  }
   const windowOptions = {
     width: WIDGET_WIDTH,
     height: WIDGET_HEIGHT,
@@ -187,8 +315,38 @@ function createMainWindow() {
     }, 300);
   });
 
+  // Single interception point for ANY close request — native taskbar
+  // "Close window", Alt+F4, or the in-app close button (which now just
+  // calls mainWindow.close() and lets this decide). Only hide-to-tray when
+  // there's an actual tray icon to bring it back via; otherwise let it
+  // close normally so window-all-closed below can quit the process.
+  mainWindow.on('close', (event) => {
+    if (isQuitting) return;
+    if (hasTrayIcon()) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Taskbar left-click restore (Windows) lands here. Re-validate position —
+  // covers the case where the window was minimized before a monitor change
+  // and is now restoring to coordinates that no longer exist.
+  mainWindow.on('restore', () => {
+    showMainWindowSmart();
+  });
+
+  // Taskbar left-click on an off-screen-but-not-minimized window fires
+  // 'focus' without ever firing 'restore' (Electron's isVisible() is true
+  // even when fully off-screen, so the window was never "minimized" in the
+  // first place). This is what makes the very first click self-correct
+  // instead of needing a focus -> minimize -> restore cycle first. Cheap
+  // check, only acts when actually off-screen, so no effect on normal use.
+  mainWindow.on('focus', () => {
+    showMainWindowSmart();
   });
 
   if (process.env.NODE_ENV === 'development') {
@@ -678,22 +836,6 @@ function generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dange
   return nativeImage.createFromBuffer(buffer, { width: size, height: size });
 }
 
-/**
- * Show the main window without the double-blink artifact on Windows.
- *
- * On Windows, transparent + alwaysOnTop + frameless windows re-enter the DWM
- * compositing pipeline in two steps when shown after hide(): an initial layered
- * window render (blink 1) followed by the alwaysOnTop z-order re-assertion
- * (blink 2). Setting opacity to 0 before show() masks those intermediate states;
- * the window is made opaque again after the DWM has had time to settle (~3 frames).
- * macOS and Linux do not have this issue so they just call show() directly.
- */
-function showMainWindowClean() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
-}
 
 function createTray() {
   // Respect the tray stats setting even when createTray is called from generic refresh paths.
@@ -723,11 +865,7 @@ function createTray() {
       {
         label: 'Show Widget',
         click: () => {
-          if (mainWindow) {
-            showMainWindowClean();
-          } else {
-            createMainWindow();
-          }
+          showMainWindowSmart();
         }
       },
       {
@@ -772,22 +910,18 @@ function createTray() {
 
     // Click handlers - swapped order
         weeklyTray.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
-          mainWindow.hide();
-        } else {
-          showMainWindowClean();
-        }
+      if (isMainWindowShownOnScreen()) {
+        mainWindow.hide();
+      } else {
+        showMainWindowSmart();
       }
     });
     
         sessionTray.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
-          mainWindow.hide();
-        } else {
-          showMainWindowClean();
-        }
+      if (isMainWindowShownOnScreen()) {
+        mainWindow.hide();
+      } else {
+        showMainWindowSmart();
       }
     });
   } catch (error) {
@@ -1106,7 +1240,7 @@ ipcMain.on('minimize-window', () => {
       mainWindow.minimize();
     } else {
       const minimizeToTray = store.get('settings.minimizeToTray', false);
-      if (minimizeToTray) {
+      if (minimizeToTray && hasTrayIcon()) {
         mainWindow.hide();
       } else {
         mainWindow.minimize();
@@ -1115,12 +1249,12 @@ ipcMain.on('minimize-window', () => {
   }
 });
 
+// Delegates to the mainWindow 'close' handler, which is the single source of
+// truth for hide-vs-quit (checks hasTrayIcon()). Keeps that decision in one
+// place instead of duplicating it here and risking the two drifting apart.
 ipcMain.on('close-window', () => {
-  const showTrayStats = store.get('settings.showTrayStats', false);
-  if (showTrayStats && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.hide();
-  } else {
-    app.quit();
+  if (mainWindow) {
+    mainWindow.close();
   }
 });
 
@@ -1190,8 +1324,8 @@ ipcMain.on('show-notification', (event, { title, body }) => {
 ipcMain.on('set-compact-mode', (event, compact) => {
   if (mainWindow) {
     const bounds = mainWindow.getBounds();
-    const width = compact ? 290 : WIDGET_WIDTH;
-    const height = compact ? 105 : WIDGET_HEIGHT;
+    const width = compact ? COMPACT_WIDTH : WIDGET_WIDTH;
+    const height = compact ? getCompactHeight() : WIDGET_HEIGHT;
     mainWindow.setBounds({ x: bounds.x, y: bounds.y, width, height });
   }
 });
@@ -1214,6 +1348,8 @@ ipcMain.handle('get-settings', () => {
     expandedOpen: store.get('settings.expandedOpen', false),
     showTrayStats: store.get('settings.showTrayStats', false),
     showTaskbarStats: store.get('settings.showTaskbarStats', true)
+    compactSpendOpen: store.get('settings.compactSpendOpen', false),
+    showTrayStats: store.get('settings.showTrayStats', false)
   };
 });
 
@@ -1234,6 +1370,11 @@ ipcMain.handle('save-settings', (event, settings) => {
   store.set('settings.refreshInterval', settings.refreshInterval);
   store.set('settings.graphVisible', settings.graphVisible);
   store.set('settings.expandedOpen', settings.expandedOpen);
+  // Guarded: settings objects cached by the renderer before this field
+  // existed would otherwise overwrite the stored value with undefined.
+  if (settings.compactSpendOpen !== undefined) {
+    store.set('settings.compactSpendOpen', settings.compactSpendOpen);
+  }
   store.set('settings.showTrayStats', settings.showTrayStats);
   store.set('settings.showTaskbarStats', settings.showTaskbarStats !== false);
 
@@ -1382,12 +1523,14 @@ ipcMain.handle('detect-session-key', async () => {
   });
 });
 
-// Check GitHub releases for a newer version
-ipcMain.handle('check-for-update', () => {
+// Fetches and JSON-parses a GitHub API path. Resolves null on any failure
+// (network error, timeout, non-JSON body) rather than rejecting, so callers
+// can treat "couldn't check" the same as "nothing new" without a try/catch.
+function fetchGithubJson(path) {
   return new Promise((resolve) => {
     const options = {
       hostname: 'api.github.com',
-      path: `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
+      path,
       method: 'GET',
       headers: {
         'User-Agent': 'claude-usage-widget',
@@ -1395,59 +1538,116 @@ ipcMain.handle('check-for-update', () => {
       },
       timeout: 5000
     };
-
     const req = https.request(options, (res) => {
       let body = '';
       res.on('data', (chunk) => { body += chunk; });
       res.on('end', () => {
-        try {
-          const data = JSON.parse(body);
-          const tag = (data.tag_name || '').replace(/^v/, '');
-          const current = app.getVersion();
-          if (tag && isNewerVersion(tag, current)) {
-            resolve({ hasUpdate: true, version: tag });
-          } else {
-            resolve({ hasUpdate: false, version: null });
-          }
-        } catch {
-          resolve({ hasUpdate: false, version: null });
-        }
+        try { resolve(JSON.parse(body)); } catch { resolve(null); }
       });
     });
-
-    req.on('error', () => resolve({ hasUpdate: false, version: null }));
-    req.on('timeout', () => { req.destroy(); resolve({ hasUpdate: false, version: null }); });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
     req.end();
   });
+}
+
+// Check GitHub releases for a newer version. Runs the stable-release check
+// for everyone; if the local build is itself a pre-release and no stable
+// update supersedes it, also checks for a newer pre-release specifically —
+// GitHub's /releases/latest endpoint never returns pre-releases, so that
+// requires a second call to the plural /releases endpoint, which returns
+// every release (stable and pre-release) with a "prerelease" boolean.
+ipcMain.handle('check-for-update', async () => {
+  const current = app.getVersion();
+
+  const latest = await fetchGithubJson(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`);
+  const latestTag = (latest?.tag_name || '').replace(/^v/, '');
+  if (latestTag && isNewerVersion(latestTag, current)) {
+    store.set('updateBannerVisible', true);
+    return { hasUpdate: true, version: latestTag };
+  }
+
+  // 'dev' is the constant placeholder version checked into develop itself —
+  // not a numbered pre-release track like rc/beta. A dev-branch runner is
+  // always at least as new as whatever RC was last cut from develop, so
+  // "there's a newer pre-release" would be backwards information for them.
+  const localVersion = parseVersion(current);
+  if (localVersion.preRelease !== null && localVersion.preReleaseLabel !== 'dev') {
+    const all = await fetchGithubJson(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`);
+    const newestPreRelease = Array.isArray(all) ? all.find((r) => r.prerelease) : null;
+    const preTag = (newestPreRelease?.tag_name || '').replace(/^v/, '');
+    if (preTag && isNewerPreRelease(preTag, current)) {
+      store.set('updateBannerVisible', true);
+      return { hasUpdate: true, version: preTag };
+    }
+  }
+
+  store.set('updateBannerVisible', false);
+  return { hasUpdate: false, version: null };
 });
 
+// Parses "1.7.6-rc.10" into comparable parts. preReleaseNum is parsed as an
+// integer specifically so "rc.10" sorts after "rc.9" — comparing the raw
+// preRelease string ("rc.10" vs "rc.9") breaks past single digits.
+function parseVersion(ver) {
+  const [mainVer, preRelease] = ver.split('-');
+  const parts = mainVer.split('.').map(Number);
+  let preReleaseLabel = null;
+  let preReleaseNum = 0;
+  if (preRelease) {
+    const match = preRelease.match(/^([a-zA-Z]+)\.?(\d+)?$/);
+    if (match) {
+      preReleaseLabel = match[1];
+      preReleaseNum = match[2] ? parseInt(match[2], 10) : 0;
+    } else {
+      preReleaseLabel = preRelease; // unrecognized suffix format — fall back to raw string
+    }
+  }
+  return {
+    major: parts[0] || 0,
+    minor: parts[1] || 0,
+    patch: parts[2] || 0,
+    preRelease: preRelease || null,
+    preReleaseLabel,
+    preReleaseNum
+  };
+}
+
+// Returns 1 if a > b, -1 if a < b, 0 if equal. A stable version (no
+// preRelease) outranks any pre-release of the same major.minor.patch.
+function compareVersions(a, b) {
+  if (a.major !== b.major) return a.major > b.major ? 1 : -1;
+  if (a.minor !== b.minor) return a.minor > b.minor ? 1 : -1;
+  if (a.patch !== b.patch) return a.patch > b.patch ? 1 : -1;
+  if (a.preRelease === null && b.preRelease === null) return 0;
+  if (a.preRelease === null) return 1;
+  if (b.preRelease === null) return -1;
+  if (a.preReleaseLabel !== b.preReleaseLabel) {
+    return a.preReleaseLabel > b.preReleaseLabel ? 1 : -1; // e.g. rc vs beta — not currently used, but won't crash
+  }
+  return a.preReleaseNum > b.preReleaseNum ? 1 : (a.preReleaseNum < b.preReleaseNum ? -1 : 0);
+}
+
+// Used for the stable-release check that runs for every user. Never
+// surfaces a pre-release as an update, regardless of what the local build is.
 function isNewerVersion(remote, local) {
   try {
-    const parseVersion = (ver) => {
-      const [mainVer, preRelease] = ver.split('-');
-      const parts = mainVer.split('.').map(Number);
-      return {
-        major: parts[0] || 0,
-        minor: parts[1] || 0,
-        patch: parts[2] || 0,
-        preRelease: preRelease || null
-      };
-    };
-
     const r = parseVersion(remote);
-    const l = parseVersion(local);
-
-    // Never notify about pre-release versions (rc, beta, alpha, etc.)
     if (r.preRelease !== null) return false;
+    return compareVersions(r, parseVersion(local)) > 0;
+  } catch { return false; }
+}
 
-    // Compare major.minor.patch
-    if (r.major !== l.major) return r.major > l.major;
-    if (r.minor !== l.minor) return r.minor > l.minor;
-    if (r.patch !== l.patch) return r.patch > l.patch;
-
-    // Same version numbers — notify if local is a pre-release and remote is stable
-    // e.g. local=1.7.5-rc.1, remote=1.7.5 → user should be told stable is out
-    return l.preRelease !== null;
+// Only meaningful when the local build is itself a pre-release. Compares
+// remote against local including the pre-release number, so an rc.2 user is
+// correctly notified about rc.3 (numeric comparison, not string comparison —
+// see parseVersion). Also correctly surfaces a newer pre-release for a later
+// major/minor/patch, not just a higher rc number on the same base version.
+function isNewerPreRelease(remote, local) {
+  try {
+    const l = parseVersion(local);
+    if (l.preRelease === null) return false;
+    return compareVersions(parseVersion(remote), l) > 0;
   } catch { return false; }
 }
 
@@ -1482,7 +1682,11 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // If forceExtended is passed (e.g., when user clicks expand), use that instead of saved setting
   const expandedOpen = options.forceExtended !== undefined ? options.forceExtended : store.get('settings.expandedOpen', false);
   const compactMode = store.get('settings.compactMode', false);
-  const shouldFetchExtended = expandedOpen;
+  // Compact mode forces the main expanded panel closed, so spend/credit
+  // endpoints are additionally polled while the compact spend row is toggled
+  // open. Collapsed compact mode does not poll the extended endpoints at all.
+  const compactSpendOpen = compactMode && store.get('settings.compactSpendOpen', false);
+  const shouldFetchExtended = expandedOpen || compactSpendOpen;
 
   const usageUrl = `https://claude.ai/api/organizations/${organizationId}/usage`;
   const overageUrl = `https://claude.ai/api/organizations/${organizationId}/overage_spend_limit`;
@@ -1545,6 +1749,12 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
 
   const data = usageResult.value;
 
+  // Normalize per-model weekly limits (e.g. Fable) from the `limits` array into
+  // synthetic seven_day_<name> top-level fields BEFORE they are stored to
+  // history or returned to the renderer, so both consumers share one source of
+  // truth. Must run before storeUsageHistory() and before `return data`.
+  normalizeUsageLimits(data);
+
   // Merge overage spending data into data.extra_usage
   if (overageResult.status === 'fulfilled' && overageResult.value) {
     const overage = overageResult.value;
@@ -1581,6 +1791,28 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
       if (!data.extra_usage.currency && prepaid.currency) {
         data.extra_usage.currency = prepaid.currency;
       }
+
+      // Credit clarity: split promotional vs purchased tranches so the
+      // renderer can show "money at risk" and expiry warnings.
+      const sumTranches = (arr) => Array.isArray(arr)
+        ? arr.reduce((s, t) => s + (t.remaining_amount_minor_units || 0), 0)
+        : null;
+      const promoCents = sumTranches(prepaid.promo_tranches);
+      const paidCents = sumTranches(prepaid.tranches);
+      if (promoCents != null) data.extra_usage.promo_cents = promoCents;
+      if (paidCents != null) data.extra_usage.paid_cents = paidCents;
+
+      if (prepaid.next_expires_at) {
+        data.extra_usage.next_expires_at = prepaid.next_expires_at;
+        // Amount expiring at that date = sum of all tranches sharing it
+        const allTranches = [
+          ...(Array.isArray(prepaid.promo_tranches) ? prepaid.promo_tranches : []),
+          ...(Array.isArray(prepaid.tranches) ? prepaid.tranches : []),
+        ];
+        data.extra_usage.next_expiry_cents = allTranches
+          .filter((t) => t.expires_at === prepaid.next_expires_at)
+          .reduce((s, t) => s + (t.remaining_amount_minor_units || 0), 0);
+      }
     }
   } else {
     debugLog('Prepaid fetch skipped or failed:', prepaidResult.reason?.message || 'no data');
@@ -1594,6 +1826,12 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Update tray and taskbar icons with current usage data
   updateTrayIcon(data);
   updateTaskbarIcon(data);
+
+  // Keep the compact window sized correctly if the Fable row just appeared/disappeared
+  if (mainWindow && !mainWindow.isDestroyed() && store.get('settings.compactMode', false)) {
+    const bounds = mainWindow.getBounds();
+    mainWindow.setBounds({ x: bounds.x, y: bounds.y, width: COMPACT_WIDTH, height: getCompactHeight() });
+  }
 
   // Re-assert always-on-top after hidden BrowserWindows from fetchViaWindow
   // are destroyed — creating/destroying BrowserWindows can temporarily disrupt
@@ -1641,6 +1879,14 @@ app.whenReady().then(async () => {
   // for the first refresh to come back.
   updateTaskbarIcon(store.get('latestUsageData'));
 
+  // Clear any stale Jump List tasks from earlier builds (the removed
+  // taskbar "Center App" task). Windows caches setUserTasks() entries
+  // against the AppUserModelID independently of whether the app still
+  // calls it, so simply removing the code that set it isn't enough.
+  if (process.platform === 'win32') {
+    app.setUserTasks([]);
+  }
+
   // Apply persisted settings
   const minimizeToTray = store.get('settings.minimizeToTray', false);
   const alwaysOnTop = store.get('settings.alwaysOnTop', true);
@@ -1667,18 +1913,25 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    // Keep running in tray
+    // Safety net: the 'close' handler above is the primary gate, but if
+    // something else ever destroys the window without going through it,
+    // don't leave a headless zombie process with no tray icon to recover
+    // through. Keep running only when a tray icon actually exists.
+    if (!hasTrayIcon()) {
+      app.quit();
+    }
   }
 });
 
+// Fires before any window's 'close' event on every genuine quit path.
+// Without this flag, the mainWindow 'close' handler can't tell a real
+// quit apart from a click on the close button to just minimize.
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.on('activate', () => {
-  if (mainWindow === null) {
-    createMainWindow();
-  } else {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  }
+  showMainWindowSmart();
 });
 
 // Prevent multiple instances
@@ -1687,9 +1940,6 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    showMainWindowSmart();
   });
 }

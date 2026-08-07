@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Build output (electron-builder outputs to dist/ by default, covers NSIS installer, portable .exe, mac .dmg, linux AppImage)
 dist/

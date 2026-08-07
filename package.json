@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-widget",
-  "version": "1.7.5",
+  "version": "1.7.6-dev",
   "description": "Desktop widget for Claude.ai usage monitoring",
   "main": "main.js",
   "scripts": {
@@ -19,7 +19,7 @@
   ],
   "author": "Slavomir Durej",
   "license": "MIT",
-  "copyright": "Copyright ┬⌐ 2025 Slavomir Durej",
+  "copyright": "Copyright © 2025 Slavomir Durej",
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
@@ -27,8 +27,8 @@
   "devDependencies": {
     "@electron/notarize": "^3.1.1",
     "cross-env": "^7.0.3",
-    "electron": "^28.3.3",
-    "electron-builder": "^24.9.1"
+    "electron": "^41.10.1",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
@@ -37,7 +37,7 @@
   "build": {
     "appId": "com.claudeusage.widget",
     "productName": "Claude-Usage-Widget",
-    "copyright": "Copyright ┬⌐ 2025 Slavomir Durej",
+    "copyright": "Copyright © 2025 Slavomir Durej",
     "publish": null,
     "win": {
       "target": [
@@ -77,11 +77,9 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": {
-        "teamId": "X84UXCNLPX"
-      },
+      "notarize": true,
       "extendInfo": {
-        "NSHumanReadableCopyright": "Copyright ┬⌐ 2025 Slavomir Durej"
+        "NSHumanReadableCopyright": "Copyright © 2025 Slavomir Durej"
       }
     },
     "dmg": {

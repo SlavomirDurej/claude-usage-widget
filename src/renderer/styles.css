@@ -659,6 +659,17 @@ body.theme-light .graph-btn.active {
     box-shadow: 0 0 10px rgba(244, 63, 94, 0.3);
 }
 
+.progress-fill.fable {
+    background: linear-gradient(90deg, #d946ef 0%, #e879f9 100%);
+    box-shadow: 0 0 10px rgba(217, 70, 239, 0.3);
+}
+
+/* Fallback color for scoped weekly-limit models not statically configured */
+.progress-fill.scoped {
+    background: linear-gradient(90deg, #64748b 0%, #94a3b8 100%);
+    box-shadow: 0 0 10px rgba(100, 116, 139, 0.3);
+}
+
 .progress-fill.cowork {
     background: linear-gradient(90deg, #06b6d4 0%, #22d3ee 100%);
     box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
@@ -729,6 +740,14 @@ body.theme-light .graph-btn.active {
     stroke: #f43f5e;
 }
 
+.timer-progress.fable {
+    stroke: #d946ef;
+}
+
+.timer-progress.scoped {
+    stroke: #64748b;
+}
+
 .timer-progress.cowork {
     stroke: #06b6d4;
 }
@@ -757,6 +776,29 @@ body.theme-light .graph-btn.active {
     font-size: 10px;
     color: #10b981;
     opacity: 0.8;
+}
+
+/* Monthly Spend row — flex layout (like the credits row below it):
+   fixed label, bar stretches to fill, dollar text flush right.
+   No dead columns; bar and text always meet with a single gap. */
+.usage-section.spend-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.spend-row .usage-label {
+    flex: 0 0 115px;
+}
+
+.spend-bar-group {
+    flex: 1;
+    min-width: 0;
+}
+
+.spend-cap-text {
+    white-space: nowrap;
 }
 
 .timer-text.extra-balance-label {
@@ -794,6 +836,60 @@ body.theme-light .graph-btn.active {
     background: rgba(160, 160, 160, 0.12);
     color: #808080;
     border: 1px solid rgba(160, 160, 160, 0.3);
+}
+
+/* Credits row — free-form flex line beneath Monthly Spend.
+   Overrides the 5-column grid; label width matches the grid's
+   first column (115px) + gap so "Credits" aligns with other labels. */
+.usage-section.credits-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.credits-row .credits-label {
+    flex: 0 0 115px;
+    margin-right: 4px;
+}
+
+/* Invisible ON/OFF badge clone — keeps "Credits" aligned with "Monthly Spend" */
+.extra-status.badge-spacer {
+    visibility: hidden;
+}
+
+.credits-amount {
+    font-size: 11px;
+    font-weight: 600;
+    color: #c0c0c8;
+    white-space: nowrap;
+}
+
+.credits-split {
+    font-size: 10px;
+    color: #808080;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.credits-chip {
+    margin-left: auto;
+    font-size: 9px;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(239, 159, 39, 0.15);
+    color: #ef9f27;
+    border: 1px solid rgba(239, 159, 39, 0.4);
+}
+
+.credits-chip.danger {
+    background: rgba(226, 75, 74, 0.15);
+    color: #e24b4a;
+    border-color: rgba(226, 75, 74, 0.4);
 }
 
 /* Settings Overlay */
@@ -1217,12 +1313,16 @@ body.theme-light .repo-btn:hover {
     background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
 }
 
-.timer-progress.warning {
+/* Elapsed-time ring states — hardcoded, independent of the usage
+   warning/danger colors above. Amber at 75% elapsed is a neutral "heads up,
+   getting close to reset" cue, not an alarm. Green at 90% elapsed signals the
+   reset is imminent, which is a good thing, not a warning. */
+.timer-progress.elapsed-warn {
     stroke: #f59e0b;
 }
 
-.timer-progress.danger {
-    stroke: #ef4444;
+.timer-progress.elapsed-soon {
+    stroke: #10b981;
 }
 
 /* Light Theme */
@@ -1479,6 +1579,10 @@ body.compact-mode .title {
     flex-direction: column;
     gap: 7px;
     width: 100%;
+    /* Reserves the same vertical space the absolutely-positioned spend
+       chevron occupies below, so .compact-content's align-items: center
+       doesn't push the rows upward now that the chevron is out of flow. */
+    padding-bottom: 8px;
 }
 
 .compact-row {
@@ -1486,6 +1590,39 @@ body.compact-mode .title {
     align-items: center;
     gap: 8px;
     width: 100%;
+}
+
+/* Spend chevron within compact mode — same rotate pattern as .expand-arrow
+   in the normal panel. Absolutely positioned against .compact-content so it
+   centers on the true window width (the in-flow .compact-rows column is
+   offset by the right-edge expand button) and hugs the bottom edge the same
+   way the normal panel's toggle does. */
+.compact-expand-toggle {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 1px;
+    display: flex;
+    justify-content: center;
+    padding: 1px 8px;
+    cursor: pointer;
+}
+
+.compact-expand-arrow {
+    color: #505050;
+    transition: all 0.2s ease;
+}
+
+.compact-expand-toggle:hover .compact-expand-arrow {
+    color: #a0a0a0;
+}
+
+.compact-expand-arrow.expanded {
+    transform: rotate(180deg);
+}
+
+body.theme-light .compact-expand-arrow {
+    color: #909090;
 }
 
 .compact-label {
@@ -1521,6 +1658,14 @@ body.compact-mode .title {
 
 .compact-bar-fill.weekly {
     background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+}
+
+.compact-bar-fill.fable {
+    background: linear-gradient(90deg, #d946ef 0%, #e879f9 100%);
+}
+
+.compact-bar-fill.spend {
+    background: linear-gradient(90deg, #1D9E75 0%, #5DCAA5 100%);
 }
 
 .compact-bar-fill.warning {

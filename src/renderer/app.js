@@ -5,6 +5,7 @@ let countdownInterval = null;
 let latestUsageData = null;
 let isExpanded = false;
 let isCompactMode = false;
+let compactSpendOpen = false; // spend row toggled open within compact mode
 let _settingsOpenedFromCompact = false;
 let usageChart = null;
 let graphVisible = false;
@@ -15,6 +16,16 @@ const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const WIDGET_HEIGHT_COLLAPSED = 155;
 const WIDGET_ROW_HEIGHT = 30;
 const GRAPH_HEIGHT = 232;
+
+// Elapsed-time ring thresholds (session/weekly/extra-row countdown circles).
+// Deliberately hardcoded and independent from the user-configurable
+// warnThreshold/dangerThreshold settings below, which describe *usage volume*
+// getting close to a limit. Time elapsing toward a reset is a different,
+// unrelated metric — nearing 100% elapsed just means the window is about to
+// refresh, which is a neutral-to-good thing, not a warning. Reusing the usage
+// thresholds/colors here was accidental coupling, not a deliberate choice.
+const ELAPSED_AMBER_THRESHOLD = 75;
+const ELAPSED_GREEN_THRESHOLD = 90;
 
 // Debug logging — only shows in DevTools (development mode).
 // Regular users won't see verbose logs in production.
@@ -104,6 +115,14 @@ const elements = {
     compactSessionPct: document.getElementById('compactSessionPct'),
     compactWeeklyFill: document.getElementById('compactWeeklyFill'),
     compactWeeklyPct: document.getElementById('compactWeeklyPct'),
+    compactFableRow: document.getElementById('compactFableRow'),
+    compactFableFill: document.getElementById('compactFableFill'),
+    compactFablePct: document.getElementById('compactFablePct'),
+    compactSpendToggle: document.getElementById('compactSpendToggle'),
+    compactSpendArrow: document.getElementById('compactSpendArrow'),
+    compactSpendRow: document.getElementById('compactSpendRow'),
+    compactSpendFill: document.getElementById('compactSpendFill'),
+    compactSpendPct: document.getElementById('compactSpendPct'),
     compactSettingsOverlay: document.getElementById('compactSettingsOverlay'),
     closeCompactSettingsBtn: document.getElementById('closeCompactSettingsBtn')
 };
@@ -164,6 +183,8 @@ async function init() {
     }
     warnThreshold = settings.warnThreshold;
     dangerThreshold = settings.dangerThreshold;
+    compactSpendOpen = !!settings.compactSpendOpen;
+    applyCompactSpendRow();
 
     // Restore compact mode from saved settings
     if (settings.compactMode) {
@@ -410,6 +431,29 @@ function setupEventListeners() {
         await _saveCompactSetting(false);
     });
 
+    // Compact mode — spend row chevron (show/hide the Spend bar)
+    elements.compactSpendToggle.addEventListener('click', async () => {
+        compactSpendOpen = !compactSpendOpen;
+        applyCompactSpendRow();
+
+        // Persist immediately (not debounced): main's getCompactHeight() reads
+        // this setting when re-sizing right below, so it must be stored first.
+        const settings = window._cachedSettings || await window.electronAPI.getSettings();
+        settings.compactSpendOpen = compactSpendOpen;
+        window._cachedSettings = settings;
+        await window.electronAPI.saveSettings(settings);
+
+        // Re-assert compact bounds so the window grows/shrinks for the row
+        if (isCompactMode) window.electronAPI.setCompactMode(true);
+
+        // Opening the row: fetch fresh spend data right away — collapsed
+        // compact mode doesn't poll the spend endpoints, so whatever is in
+        // latestUsageData.extra_usage may be stale or missing until this lands
+        if (compactSpendOpen) {
+            await fetchUsageData({ forceExtended: true });
+        }
+    });
+
     // Compact mode toggle in normal settings panel — deferred to Done click
 
     // Compact mode toggle in compact settings panel — just updates the checkbox, Done applies it
@@ -571,13 +615,68 @@ function formatCurrency(amountCents, currencyCode) {
 const EXTRA_ROW_CONFIG = {
     seven_day_sonnet: { label: 'Sonnet (7d)', color: 'sonnet' },
     seven_day_opus: { label: 'Opus (7d)', color: 'opus' },
+    seven_day_fable: { label: 'Fable (7d)', color: 'fable' },
     seven_day_cowork: { label: 'Cowork (7d)', color: 'cowork' },
     seven_day_omelette: { label: 'Design (7d)', color: 'design' },
     seven_day_oauth_apps: { label: 'OAuth Apps (7d)', color: 'oauth' },
     extra_usage: { label: 'Extra Usage', color: 'extra' },
 };
 
+// Expiry warning thresholds for the credits row (days until next_expires_at)
+const CREDIT_EXPIRY_WARN_DAYS = 21;
+const CREDIT_EXPIRY_DANGER_DAYS = 7;
+
+// Builds the credit-balance row shown beneath Monthly Spend.
+// Promo/paid split renders only when purchased credits exist (money at risk);
+// the expiry chip renders only when the next expiry is within the warn window.
+function buildCreditsRow(value) {
+    const row = document.createElement('div');
+    row.className = 'usage-section credits-row';
+
+    const label = document.createElement('span');
+    label.className = 'usage-label credits-label';
+    // Invisible clone of the spend row's ON/OFF badge so "Credits" aligns
+    // with "Monthly Spend" regardless of badge width
+    if (value.is_enabled === true || value.is_enabled === false) {
+        const spacer = document.createElement('span');
+        spacer.className = 'extra-status badge-spacer';
+        spacer.textContent = value.is_enabled ? 'ON' : 'OFF';
+        label.appendChild(spacer);
+    }
+    label.appendChild(document.createTextNode(' Credits'));
+    row.appendChild(label);
+
+    const amount = document.createElement('span');
+    amount.className = 'credits-amount';
+    amount.textContent = formatCurrency(value.balance_cents, value.currency);
+    row.appendChild(amount);
+
+    if (typeof value.paid_cents === 'number' && value.paid_cents > 0) {
+        const split = document.createElement('span');
+        split.className = 'credits-split';
+        split.textContent = `promo ${formatCurrency(value.promo_cents || 0, value.currency)} / paid ${formatCurrency(value.paid_cents, value.currency)}`;
+        row.appendChild(split);
+    }
+
+    if (value.next_expires_at && typeof value.next_expiry_cents === 'number' && value.next_expiry_cents > 0) {
+        const daysLeft = Math.ceil((new Date(value.next_expires_at).getTime() - Date.now()) / 86400000);
+        if (daysLeft >= 0 && daysLeft <= CREDIT_EXPIRY_WARN_DAYS) {
+            const chip = document.createElement('span');
+            chip.className = 'credits-chip' + (daysLeft <= CREDIT_EXPIRY_DANGER_DAYS ? ' danger' : '');
+            const when = daysLeft <= CREDIT_EXPIRY_DANGER_DAYS
+                ? `in ${daysLeft}d`
+                : new Date(value.next_expires_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            chip.textContent = `${formatCurrency(value.next_expiry_cents, value.currency)} expires ${when}`;
+            chip.title = `Expires ${new Date(value.next_expires_at).toLocaleDateString()}`;
+            row.appendChild(chip);
+        }
+    }
+
+    return row;
+}
+
 function buildExtraRows(data) {
+
     // Don't clear existing rows if we don't have new data to replace them with
     // This preserves the last known state when expanding the panel
     const hasAnyExtendedData = Object.entries(EXTRA_ROW_CONFIG).some(([key, config]) => {
@@ -626,22 +725,23 @@ function buildExtraRows(data) {
                 statusTag.textContent = 'OFF';
                 label.appendChild(statusTag);
             }
-            label.appendChild(document.createTextNode(' Extra Usage'));
+            label.appendChild(document.createTextNode(' Monthly Spend'));
         } else {
             label.textContent = config.label;
         }
         row.appendChild(label);
 
         if (key === 'extra_usage') {
-            // Extra usage: bar col shows $used/$limit, elapsed col empty, timer col shows account credits
+            // Spend row uses flex (like the credits row): label | stretching bar | right-flush $ text
+            row.classList.add('spend-row');
             const barGroup = document.createElement('div');
-            barGroup.className = 'usage-bar-group';
+            barGroup.className = 'usage-bar-group spend-bar-group';
             const progressBar = document.createElement('div');
             progressBar.className = 'progress-bar';
             const progressFill = document.createElement('div');
             progressFill.className = `progress-fill ${colorClass}`;
             progressFill.style.width = `${Math.min(utilization, 100)}%`;
-            
+
             // Apply warning/danger thresholds to extra usage bar
             if (utilization >= dangerThreshold) {
                 progressFill.classList.add('danger');
@@ -651,33 +751,21 @@ function buildExtraRows(data) {
             
             progressBar.appendChild(progressFill);
             barGroup.appendChild(progressBar);
-
-            const percentage = document.createElement('span');
-            if (value.used_cents != null && value.limit_cents != null) {
-                percentage.className = 'usage-percentage extra-spending';
-                percentage.textContent = `${formatCurrency(value.used_cents, value.currency)}/${formatCurrency(value.limit_cents, value.currency)}`;
-            } else {
-                percentage.className = 'usage-percentage';
-                percentage.textContent = `${Math.round(utilization)}%`;
-            }
-            barGroup.appendChild(percentage);
             row.appendChild(barGroup);
 
-            const elapsedGroup = document.createElement('div');
-            elapsedGroup.className = 'usage-elapsed-group';
-            row.appendChild(elapsedGroup);
-
-            const timerText = document.createElement('span');
-            timerText.className = 'timer-text extra-balance-label';
-            timerText.textContent = 'Account Credits:';
-            row.appendChild(timerText);
-
-            const resetsText = document.createElement('span');
-            resetsText.className = 'resets-at-text extra-balance-amount';
-            if (value.balance_cents != null) {
-                resetsText.textContent = formatCurrency(value.balance_cents, value.currency);
+            // Dollar text lives in the (now empty) timer+resets columns so the
+            // bar keeps the full bar-column width like the session/weekly rows
+            const spendText = document.createElement('span');
+            if (value.used_cents != null && value.limit_cents != null) {
+                spendText.className = 'usage-percentage extra-spending spend-cap-text';
+                let limitStr = formatCurrency(value.limit_cents, value.currency);
+                if (value.limit_cents % 100 === 0) limitStr = limitStr.replace('.00', '');
+                spendText.textContent = `${formatCurrency(value.used_cents, value.currency)}/${limitStr} cap`;
+            } else {
+                spendText.className = 'usage-percentage spend-cap-text';
+                spendText.textContent = `${Math.round(utilization)}%`;
             }
-            row.appendChild(resetsText);
+            row.appendChild(spendText);
         } else {
             const totalMinutes = key.includes('seven_day') ? 7 * 24 * 60 : 5 * 60;
 
@@ -688,6 +776,15 @@ function buildExtraRows(data) {
             const progressFill = document.createElement('div');
             progressFill.className = `progress-fill ${colorClass}`;
             progressFill.style.width = `${Math.min(utilization, 100)}%`;
+            // Apply warning/danger thresholds — same check the spend row and
+            // compact mode already use, previously missing here so every
+            // model row (Sonnet, Opus, Fable, etc.) rendered flat regardless
+            // of usage level.
+            if (utilization >= dangerThreshold) {
+                progressFill.classList.add('danger');
+            } else if (utilization >= warnThreshold) {
+                progressFill.classList.add('warning');
+            }
             progressBar.appendChild(progressFill);
             barGroup.appendChild(progressBar);
 
@@ -739,6 +836,12 @@ function buildExtraRows(data) {
 
         elements.extraRows.appendChild(row);
         count++;
+
+        // Credit balance gets its own row beneath Monthly Spend
+        if (key === 'extra_usage' && value.balance_cents != null) {
+            elements.extraRows.appendChild(buildCreditsRow(value));
+            count++;
+        }
     }
 
     // Hide toggle if no extra rows
@@ -753,14 +856,17 @@ function buildExtraRows(data) {
 }
 
 function refreshExtraTimers() {
-    const timerTexts = elements.extraRows.querySelectorAll('.timer-text');
-    const timerCircles = elements.extraRows.querySelectorAll('.timer-progress');
-
-    timerTexts.forEach((textEl, i) => {
+    // Pair each row's timer text with its own circle. Pairing the two
+    // querySelectorAll lists by index breaks as soon as a row has a text but
+    // no circle (the extra_usage row), which shifts every later row's circle
+    // and leaves those timers stuck at --:--.
+    elements.extraRows.querySelectorAll('.usage-section').forEach((row) => {
+        const textEl = row.querySelector('.timer-text');
+        const circleEl = row.querySelector('.timer-progress');
+        if (!textEl || !circleEl) return;
         const resetsAt = textEl.dataset.resets;
         const totalMinutes = parseInt(textEl.dataset.total);
-        const circleEl = timerCircles[i];
-        if (resetsAt && circleEl) {
+        if (resetsAt) {
             updateTimer(circleEl, textEl, resetsAt, totalMinutes);
         }
     });
@@ -784,6 +890,24 @@ function resizeWidget(bannerVisible) {
 }
 
 function normalizeUsageData(data) {
+    // The synthetic seven_day_<name> fields for scoped weekly limits (e.g.
+    // Fable) are produced centrally in main.js (normalize-usage-limits.js), so
+    // `data` already carries them here. This renderer step only ensures every
+    // scoped model has a matching EXTRA_ROW_CONFIG entry: statically known
+    // models (Fable) already do; any unknown model is registered generically
+    // (label "<DisplayName> (7d)", fallback color) while keeping extra_usage as
+    // the last row so it stays grouped below the model rows.
+    for (const limit of (data && data.limits) || []) {
+        if (!limit || limit.kind !== 'weekly_scoped' || limit.percent == null) continue;
+        const displayName = limit.scope && limit.scope.model && limit.scope.model.display_name;
+        if (!displayName) continue;
+        const key = 'seven_day_' + String(displayName).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        if (EXTRA_ROW_CONFIG[key]) continue; // already known (e.g. seven_day_fable)
+        const extraUsage = EXTRA_ROW_CONFIG.extra_usage;
+        delete EXTRA_ROW_CONFIG.extra_usage;
+        EXTRA_ROW_CONFIG[key] = { label: `${displayName} (7d)`, color: 'scoped' };
+        EXTRA_ROW_CONFIG.extra_usage = extraUsage;
+    }
     return data;
 }
 
@@ -833,36 +957,68 @@ function checkUsageAlerts(data) {
     }
 
     // Current Session — danger threshold (check first, higher priority)
-    if (sessionPct >= dangerThreshold && !alertFired.session_danger) {
+    // Capped below 100 so the dedicated "limit reached" notification owns that moment exclusively
+    if (sessionPct >= dangerThreshold && sessionPct < 100 && !alertFired.session_danger) {
         alertFired.session_danger = true;
         alertFired.session_warn = true; // suppress warn if we jumped straight to danger
         window.electronAPI.showNotification(
             'Claude Usage Widget',
-            `Current Session usage is at ${Math.round(sessionPct)}% — running low`
+            `Current Session usage is at ${Math.round(sessionPct)}% — usage is extremely low`
         );
     // Current Session — warn threshold
-    } else if (sessionPct >= warnThreshold && !alertFired.session_warn) {
+    } else if (sessionPct >= warnThreshold && sessionPct < 100 && !alertFired.session_warn) {
         alertFired.session_warn = true;
         window.electronAPI.showNotification(
             'Claude Usage Widget',
-            `Current Session usage has reached ${Math.round(sessionPct)}%`
+            `Current Session usage is at ${Math.round(sessionPct)}% — usage is low`
         );
     }
 
     // Weekly Limit — danger threshold
-    if (weeklyPct >= dangerThreshold && !alertFired.weekly_danger) {
+    // Capped below 100 so the dedicated "limit reached" notification owns that moment exclusively
+    if (weeklyPct >= dangerThreshold && weeklyPct < 100 && !alertFired.weekly_danger) {
         alertFired.weekly_danger = true;
         alertFired.weekly_warn = true;
         window.electronAPI.showNotification(
             'Claude Usage Widget',
-            `Weekly Limit usage is at ${Math.round(weeklyPct)}% — running low`
+            `Weekly Limit usage is at ${Math.round(weeklyPct)}% — usage is extremely low`
         );
     // Weekly Limit — warn threshold
-    } else if (weeklyPct >= warnThreshold && !alertFired.weekly_warn) {
+    } else if (weeklyPct >= warnThreshold && weeklyPct < 100 && !alertFired.weekly_warn) {
         alertFired.weekly_warn = true;
         window.electronAPI.showNotification(
             'Claude Usage Widget',
-            `Weekly Limit usage has reached ${Math.round(weeklyPct)}%`
+            `Weekly Limit usage is at ${Math.round(weeklyPct)}% — usage is low`
+        );
+    }
+
+    // Combined blocked/available — fires once when the user actually can't use
+    // Claude anymore (either window at 100%), and once when it genuinely clears.
+    // Single flag by design: if weekly is still at 100% when session resets, isBlocked
+    // stays true, so a session-only reset never fires a false "available again".
+    // Weekly checked first since it's the more restrictive limit when both are maxed.
+    const isBlocked = weeklyPct >= 100 || sessionPct >= 100;
+    if (isBlocked && !alertFired.blocked) {
+        alertFired.blocked = true;
+        if (weeklyPct >= 100) {
+            window.electronAPI.showNotification(
+                'Weekly limit reached.',
+                // Build date and time as separate pieces and join with "at" — formatResetsAt's
+                // combined date-day-time mode concatenates them with no connector, which read
+                // run-on. Independent of dashboard's weeklyDateFormat setting on purpose.
+                `Usage resets on ${formatResetsAt(data.seven_day?.resets_at, true, settings.timeFormat || '12h', 'date-day')} at ${formatResetsAt(data.seven_day?.resets_at, false, settings.timeFormat || '12h', 'date-day')}.`
+            );
+        } else {
+            window.electronAPI.showNotification(
+                'Session limit reached.',
+                `Usage resets at ${formatResetsAt(data.five_hour?.resets_at, false, settings.timeFormat || '12h', settings.weeklyDateFormat || 'date')}.`
+            );
+        }
+    } else if (!isBlocked && alertFired.blocked) {
+        alertFired.blocked = false;
+        window.electronAPI.showNotification(
+            'Claude Usage Widget',
+            'Usage is available again.'
         );
     }
 }
@@ -946,6 +1102,41 @@ function updateCompactBars(data) {
     elements.compactWeeklyFill.className = 'compact-bar-fill weekly';
     if (weeklyPct >= dangerThreshold) elements.compactWeeklyFill.classList.add('danger');
     else if (weeklyPct >= warnThreshold) elements.compactWeeklyFill.classList.add('warning');
+
+    // Fable — only shown when the account has a scoped Fable weekly limit
+    // (data.seven_day_fable, normalized centrally by main.js before this ever
+    // reaches the renderer — see src/normalize-usage-limits.js)
+    if (data.seven_day_fable) {
+        const fablePct = Math.min(Math.max(data.seven_day_fable.utilization || 0, 0), 100);
+        elements.compactFableRow.style.display = '';
+        elements.compactFableFill.style.width = `${fablePct}%`;
+        elements.compactFablePct.textContent = `${Math.round(fablePct)}%`;
+        elements.compactFableFill.className = 'compact-bar-fill fable';
+        if (fablePct >= dangerThreshold) elements.compactFableFill.classList.add('danger');
+        else if (fablePct >= warnThreshold) elements.compactFableFill.classList.add('warning');
+    } else {
+        elements.compactFableRow.style.display = 'none';
+    }
+
+    // Spend — only populated while the row is toggled open (collapsed compact
+    // mode doesn't poll the spend endpoints, so data.extra_usage may be
+    // stale or absent until the row is opened and a fetch completes)
+    if (compactSpendOpen && data.extra_usage && data.extra_usage.utilization !== undefined) {
+        const spendPct = Math.min(Math.max(data.extra_usage.utilization || 0, 0), 100);
+        elements.compactSpendFill.style.width = `${spendPct}%`;
+        elements.compactSpendPct.textContent = `${Math.round(spendPct)}%`;
+        elements.compactSpendFill.className = 'compact-bar-fill spend';
+        if (spendPct >= dangerThreshold) elements.compactSpendFill.classList.add('danger');
+        else if (spendPct >= warnThreshold) elements.compactSpendFill.classList.add('warning');
+    }
+}
+
+// Sync the compact spend chevron + row visibility from compactSpendOpen state
+function applyCompactSpendRow() {
+    if (!elements.compactSpendToggle) return;
+    elements.compactSpendArrow.classList.toggle('expanded', compactSpendOpen);
+    elements.compactSpendToggle.title = compactSpendOpen ? 'Hide spend' : 'Show spend';
+    elements.compactSpendRow.style.display = compactSpendOpen ? '' : 'none';
 }
 // Persist compact mode setting without touching the rest of settings — debounced
 let _saveCompactTimer = null;
@@ -979,13 +1170,17 @@ let isFirstDataLoad = true; // used to seed alert flags on startup
 
 // Track which usage alert thresholds have already fired this window
 // Prevents repeat notifications on every refresh cycle
-// Keys: 'session_warn', 'session_danger', 'weekly_warn', 'weekly_danger'
+// Keys: 'session_warn', 'session_danger', 'weekly_warn', 'weekly_danger', 'blocked'
 // Seeded on startup so thresholds already exceeded at launch don't fire immediately
+// 'blocked' is a single combined flag (not per-window) — see checkUsageAlerts for why:
+// it must stay true if EITHER session or weekly is at 100%, so a session-only reset
+// while weekly is still maxed never fires a false "available again" notification.
 const alertFired = {
     session_warn: false,
     session_danger: false,
     weekly_warn: false,
-    weekly_danger: false
+    weekly_danger: false,
+    blocked: false
 };
 
 // Seed alertFired flags based on current utilization at startup.
@@ -1007,6 +1202,12 @@ function seedAlertFlags(data) {
         alertFired.weekly_warn = true;
     } else if (weeklyPct >= warnThreshold) {
         alertFired.weekly_warn = true;
+    }
+
+    // Seed the combined blocked flag the same way — if either is already at 100%
+    // when the app launches, don't fire "limit reached" immediately.
+    if (sessionPct >= 100 || weeklyPct >= 100) {
+        alertFired.blocked = true;
     }
 }
 
@@ -1196,12 +1397,14 @@ function updateTimer(timerElement, textElement, resetsAt, totalMinutes) {
     const offset = circumference - (elapsedPercentage / 100) * circumference;
     timerElement.style.strokeDashoffset = offset;
 
-    // Update color based on remaining time
-    timerElement.classList.remove('warning', 'danger');
-    if (elapsedPercentage >= 90) {
-        timerElement.classList.add('danger');
-    } else if (elapsedPercentage >= 75) {
-        timerElement.classList.add('warning');
+    // Update color based on time remaining until reset — hardcoded thresholds,
+    // intentionally independent of the usage warnThreshold/dangerThreshold
+    // settings (see ELAPSED_AMBER_THRESHOLD/ELAPSED_GREEN_THRESHOLD above).
+    timerElement.classList.remove('elapsed-warn', 'elapsed-soon');
+    if (elapsedPercentage >= ELAPSED_GREEN_THRESHOLD) {
+        timerElement.classList.add('elapsed-soon');
+    } else if (elapsedPercentage >= ELAPSED_AMBER_THRESHOLD) {
+        timerElement.classList.add('elapsed-warn');
     }
 }
 
@@ -1291,6 +1494,7 @@ function renderChart(history) {
 
     const showSonnet = isExpanded && !!latestUsageData?.seven_day_sonnet;
     const showOpus = isExpanded && !!latestUsageData?.seven_day_opus;
+    const showFable = isExpanded && !!latestUsageData?.seven_day_fable;
     const showCowork = isExpanded && !!latestUsageData?.seven_day_cowork;
     const showDesign = isExpanded && !!latestUsageData?.seven_day_omelette;
     const showOAuthApps = isExpanded && !!latestUsageData?.seven_day_oauth_apps;
@@ -1299,6 +1503,7 @@ function renderChart(history) {
         const values = [entry.session, entry.weekly];
         if (showSonnet) values.push(entry.sonnet || 0);
         if (showOpus) values.push(entry.opus || 0);
+        if (showFable) values.push(entry.fable || 0);
         if (showCowork) values.push(entry.cowork || 0);
         if (showDesign) values.push(entry.design || 0);
         if (showOAuthApps) values.push(entry.oauthApps || 0);
@@ -1356,6 +1561,23 @@ function renderChart(history) {
                 label: 'Opus',
                 data: history.map((entry) => ({ x: entry.timestamp, y: entry.opus || 0 })),
                 borderColor: '#f59e0b',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                stepped: true,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                pointHitRadius: 10
+            });
+        }
+    }
+
+    if (showFable) {
+        const fableData = history.map((entry) => entry.fable || 0);
+        if (fableData.some((value) => value > 0)) {
+            datasets.push({
+                label: 'Fable',
+                data: history.map((entry) => ({ x: entry.timestamp, y: entry.fable || 0 })),
+                borderColor: '#d946ef',
                 backgroundColor: 'transparent',
                 borderWidth: 2,
                 stepped: true,
@@ -1731,10 +1953,18 @@ async function checkForUpdate() {
 
         const version = result.version;
 
-        // Show banner and expand window to compensate
+        // Show banner and resize to compensate. resizeWidget() is normal-mode
+        // only (it hardcodes WIDGET_WIDTH via the resize-window IPC channel),
+        // so in compact mode re-assert compact bounds instead — main.js's
+        // getCompactHeight() already accounts for the banner via
+        // updateBannerVisible, set in the same check-for-update call above.
         elements.updateBannerText.textContent = `▲  Version ${version} available — click to download`;
         elements.updateBanner.style.display = 'flex';
-        resizeWidget(true);
+        if (isCompactMode) {
+            window.electronAPI.setCompactMode(true);
+        } else {
+            resizeWidget(true);
+        }
 
         // Populate settings panel link if already visible
         if (elements.settingsUpdateLink) {
