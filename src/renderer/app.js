@@ -1,6 +1,7 @@
 // Application state
 let credentials = null;
 let updateInterval = null;
+let _autoUpdateStopped = true;  // when true, the next scheduleAutoUpdate tick won't re-arm
 let countdownInterval = null;
 let latestUsageData = null;
 let isExpanded = false;
@@ -1442,20 +1443,42 @@ function showMainContent() {
 }
 
 // Auto-update management
-function startAutoUpdate() {
+// Jitter cap: ±25% of the configured interval, so a herd of widget instances
+// does not all hit Claude.ai at exactly the same tick. Applied to the *delay*
+// before each fetch, not the timer period itself, so a slow fetch does not
+// cause a missed tick.
+const JITTER_FRACTION = 0.25;
+
+function scheduleAutoUpdate() {
     stopAutoUpdate();
     const settings = window._cachedSettings || {};
     const intervalSecs = parseInt(settings.refreshInterval) || 300;
-    updateInterval = setInterval(async () => {
+    const baseMs = intervalSecs * 1000;
+    const jitter = baseMs * JITTER_FRACTION * (Math.random() * 2 - 1);
+    const delay = Math.max(1000, Math.round(baseMs + jitter));
+    updateInterval = setTimeout(async () => {
         if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
-        await fetchUsageData();
-        if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
-    }, intervalSecs * 1000);
+        try {
+            await fetchUsageData();
+        } finally {
+            if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
+            // Schedule the next tick only after this fetch completes (success
+            // or fail), so an in-flight 429 retry never overlaps with the next
+            // auto-refresh.
+            if (!_autoUpdateStopped) scheduleAutoUpdate();
+        }
+    }, delay);
+}
+
+function startAutoUpdate() {
+    _autoUpdateStopped = false;
+    scheduleAutoUpdate();
 }
 
 function stopAutoUpdate() {
+    _autoUpdateStopped = true;
     if (updateInterval) {
-        clearInterval(updateInterval);
+        clearTimeout(updateInterval);
         updateInterval = null;
     }
 }
