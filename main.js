@@ -528,7 +528,155 @@ function generateRedXIcon() {
   return nativeImage.createFromBuffer(buffer, { width, height });
 }
 
+/**
+ * Taskbar icon geometry. The icon is drawn at 128x128 and handed to Windows,
+ * which scales it down to whatever the taskbar/window needs (24-48px). Drawing
+ * large keeps the two numbers readable after that downscale and avoids the
+ * blurry upscale that a 20x20 tray-sized icon would produce on high-DPI screens.
+ */
+const TASKBAR_ICON_SIZE = 128;
+const TASKBAR_PANEL_PADDING = 3;
+const TASKBAR_MAX_GLYPH_SCALE = 4.5;
+const TASKBAR_DIVIDER_COLOR = { r: 24, g: 24, b: 32 };
 
+/**
+ * Fill a rectangle in a BGRA buffer, clipping to the buffer bounds
+ */
+function fillRect(buffer, width, height, x, y, w, h, color, alpha = 255) {
+  const x0 = Math.max(0, Math.round(x));
+  const y0 = Math.max(0, Math.round(y));
+  const x1 = Math.min(width, Math.round(x + w));
+  const y1 = Math.min(height, Math.round(y + h));
+
+  for (let py = y0; py < y1; py++) {
+    for (let px = x0; px < x1; px++) {
+      const offset = (py * width + px) * 4;
+      buffer[offset] = color.b;
+      buffer[offset + 1] = color.g;
+      buffer[offset + 2] = color.r;
+      buffer[offset + 3] = alpha;
+    }
+  }
+}
+
+/**
+ * Draw a bitmap character scaled by an arbitrary (possibly fractional) factor.
+ * Nearest-neighbour sampling is fine here because the 128px master is always
+ * resampled by Windows before it reaches the screen.
+ */
+function drawCharScaled(buffer, width, height, char, x, y, scale, color, useNarrow = false) {
+  const charWidth = useNarrow ? 6 : 8;
+  const bitmap = useNarrow ? BITMAP_FONT_NARROW[char] : BITMAP_FONT[char];
+  if (!bitmap) return charWidth * scale;
+
+  const charHeight = 11;
+  const maxCol = charWidth - 1;
+  const destWidth = Math.round(charWidth * scale);
+  const destHeight = Math.round(charHeight * scale);
+  const originX = Math.round(x);
+  const originY = Math.round(y);
+
+  for (let dy = 0; dy < destHeight; dy++) {
+    const row = Math.min(charHeight - 1, Math.floor(dy / scale));
+    for (let dx = 0; dx < destWidth; dx++) {
+      const col = Math.min(charWidth - 1, Math.floor(dx / scale));
+      if (!(bitmap[row] & (1 << (maxCol - col)))) continue;
+
+      const px = originX + dx;
+      const py = originY + dy;
+      if (px < 0 || px >= width || py < 0 || py >= height) continue;
+
+      const offset = (py * width + px) * 4;
+      buffer[offset] = color.b;
+      buffer[offset + 1] = color.g;
+      buffer[offset + 2] = color.r;
+      buffer[offset + 3] = color.a;
+    }
+  }
+  return charWidth * scale;
+}
+
+/**
+ * Draw an X glyph centered on (cx, cy), matching the tray's maxed-out icon
+ */
+function drawXGlyph(buffer, width, height, cx, cy, radius, thickness, color) {
+  const halfThickness = thickness / 2;
+  const steps = Math.max(1, Math.round(radius * 2));
+
+  for (let i = 0; i <= steps; i++) {
+    const offset = -radius + (i / steps) * radius * 2;
+    const x = cx + offset;
+    fillRect(buffer, width, height, x - halfThickness, cy + offset - halfThickness, thickness, thickness, color);
+    fillRect(buffer, width, height, x - halfThickness, cy - offset - halfThickness, thickness, thickness, color);
+  }
+}
+
+/**
+ * Draw one half of the taskbar icon: a colored panel with the percentage on it
+ */
+function drawTaskbarPanel(buffer, size, panelX, panelWidth, percent, bgColor) {
+  fillRect(buffer, size, size, panelX, 0, panelWidth, size, bgColor);
+
+  const white = { r: 255, g: 255, b: 255, a: 255 };
+
+  // 99%+ shows an X instead of a number, same as the tray icons
+  if (percent >= 99) {
+    const radius = (panelWidth - TASKBAR_PANEL_PADDING * 2) / 2.6;
+    drawXGlyph(buffer, size, size, panelX + panelWidth / 2, size / 2, radius, Math.max(2, radius / 2.5), white);
+    return;
+  }
+
+  const text = Math.round(percent).toString();
+  const useNarrow = text.length >= 3;
+  const glyphWidth = useNarrow ? 6 : 8;
+  const gapUnits = 1;
+
+  // Scale the digits to fill the panel width, capped so a single digit doesn't
+  // balloon out of proportion with the two-digit case.
+  const units = text.length * glyphWidth + (text.length - 1) * gapUnits;
+  const usableWidth = panelWidth - TASKBAR_PANEL_PADDING * 2;
+  const scale = Math.min(usableWidth / units, TASKBAR_MAX_GLYPH_SCALE);
+
+  let x = panelX + (panelWidth - units * scale) / 2;
+  const y = (size - 11 * scale) / 2;
+
+  for (const char of text) {
+    drawCharScaled(buffer, size, size, char, x, y, scale, white, useNarrow);
+    x += (glyphWidth + gapUnits) * scale;
+  }
+}
+
+/**
+ * Generate the Windows taskbar icon: session usage on the left half,
+ * weekly usage on the right half, each on its own threshold-colored panel.
+ * @param {number} sessionPercent - 5-hour session usage percentage
+ * @param {number} weeklyPercent - 7-day usage percentage
+ * @param {number} warnThreshold - Percentage at which panels turn amber
+ * @param {number} dangerThreshold - Percentage at which panels turn red
+ * @returns {NativeImage} Generated taskbar icon
+ */
+function generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dangerThreshold) {
+  const size = TASKBAR_ICON_SIZE;
+  const panelWidth = size / 2;
+  const buffer = Buffer.alloc(size * size * 4);
+  const maxedColor = { r: 220, g: 53, b: 69 }; // #dc3545, same red as the tray X
+
+  const sessionColor = sessionPercent >= 99
+    ? maxedColor
+    : getBackgroundColor(sessionPercent, true, warnThreshold, dangerThreshold);
+  const weeklyColor = weeklyPercent >= 99
+    ? maxedColor
+    : getBackgroundColor(weeklyPercent, false, warnThreshold, dangerThreshold);
+
+  drawTaskbarPanel(buffer, size, 0, panelWidth, sessionPercent, sessionColor);
+  drawTaskbarPanel(buffer, size, panelWidth, panelWidth, weeklyPercent, weeklyColor);
+
+  // Divider keeps the two halves distinguishable when both panels share a color.
+  // Kept at 3px on the 128px master so it survives the downscale to 24px.
+  fillRect(buffer, size, size, panelWidth - 1.5, 0, 3, size, TASKBAR_DIVIDER_COLOR);
+
+  return nativeImage.createFromBuffer(buffer, { width: size, height: size });
+}
 
 /**
  * Show the main window without the double-blink artifact on Windows.
@@ -794,6 +942,53 @@ function updateTrayIcon(usageData) {
   }
 }
 
+/**
+ * Restore the bundled application icon on the taskbar / window
+ */
+function resetTaskbarIcon() {
+  if (process.platform !== 'win32') return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  try {
+    mainWindow.setIcon(path.join(__dirname, 'assets/icon.ico'));
+  } catch (error) {
+    console.error('Failed to reset taskbar icon:', error);
+  }
+}
+
+/**
+ * Update the Windows taskbar icon with the current session and weekly usage.
+ * Windows only — setIcon() is a no-op on macOS, and Linux desktops generally
+ * take the taskbar icon from the .desktop entry rather than the window.
+ * @param {Object} usageData - Usage data object containing session and weekly percentages
+ */
+function updateTaskbarIcon(usageData) {
+  if (process.platform !== 'win32') return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  // "Hide from taskbar" removes the taskbar button entirely, so there is nothing
+  // to draw stats on — keep the plain app icon for the alt-tab entry instead.
+  const hiddenFromTaskbar = store.get('settings.minimizeToTray', false);
+  if (hiddenFromTaskbar || !store.get('settings.showTaskbarStats', true)) {
+    resetTaskbarIcon();
+    return;
+  }
+
+  // Keep the default icon until there is something real to draw
+  if (!usageData) return;
+
+  const warnThreshold = store.get('settings.warnThreshold', 75);
+  const dangerThreshold = store.get('settings.dangerThreshold', 90);
+  const sessionPercent = usageData?.five_hour?.utilization || 0;
+  const weeklyPercent = usageData?.seven_day?.utilization || 0;
+
+  try {
+    mainWindow.setIcon(generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dangerThreshold));
+  } catch (error) {
+    console.error('Failed to update taskbar icon:', error);
+  }
+}
+
 
 // IPC Handlers
 ipcMain.handle('get-credentials', () => {
@@ -1017,7 +1212,8 @@ ipcMain.handle('get-settings', () => {
     refreshInterval: store.get('settings.refreshInterval', '300'),
     graphVisible: store.get('settings.graphVisible', false),
     expandedOpen: store.get('settings.expandedOpen', false),
-    showTrayStats: store.get('settings.showTrayStats', false)
+    showTrayStats: store.get('settings.showTrayStats', false),
+    showTaskbarStats: store.get('settings.showTaskbarStats', true)
   };
 });
 
@@ -1039,6 +1235,7 @@ ipcMain.handle('save-settings', (event, settings) => {
   store.set('settings.graphVisible', settings.graphVisible);
   store.set('settings.expandedOpen', settings.expandedOpen);
   store.set('settings.showTrayStats', settings.showTrayStats);
+  store.set('settings.showTaskbarStats', settings.showTaskbarStats !== false);
 
   const isPortable = process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_FILE;
 
@@ -1062,12 +1259,13 @@ ipcMain.handle('save-settings', (event, settings) => {
     mainWindow.setAlwaysOnTop(settings.alwaysOnTop, 'floating');
   }
 
+  const latestUsageData = store.get('latestUsageData');
+
   if (!settings.showTrayStats) {
     // Remove tray icons immediately when the setting is turned off from the UI.
     destroyTrayIcons();
   } else {
     // Refresh tray icons immediately with new threshold settings
-    const latestUsageData = store.get('latestUsageData');
     if (latestUsageData) {
       updateTrayIcon(latestUsageData);
     } else {
@@ -1075,6 +1273,10 @@ ipcMain.handle('save-settings', (event, settings) => {
       createTray();
     }
   }
+
+  // Apply the taskbar icon change (or restore the app icon) without waiting
+  // for the next refresh. Handles threshold changes too.
+  updateTaskbarIcon(latestUsageData);
 
   return true;
 });
@@ -1389,8 +1591,9 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Store latest usage data for settings refresh
   store.set('latestUsageData', data);
 
-  // Update tray icon with current usage data
+  // Update tray and taskbar icons with current usage data
   updateTrayIcon(data);
+  updateTaskbarIcon(data);
 
   // Re-assert always-on-top after hidden BrowserWindows from fetchViaWindow
   // are destroyed — creating/destroying BrowserWindows can temporarily disrupt
@@ -1434,6 +1637,9 @@ app.whenReady().then(async () => {
   if (store.get('settings.showTrayStats', false)) {
     createTray();
   }
+  // Show the last known usage on the taskbar immediately instead of waiting
+  // for the first refresh to come back.
+  updateTaskbarIcon(store.get('latestUsageData'));
 
   // Apply persisted settings
   const minimizeToTray = store.get('settings.minimizeToTray', false);

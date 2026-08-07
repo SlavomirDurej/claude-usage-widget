@@ -17,7 +17,8 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 🎨 **Modern UI** — Sleek, draggable widget with dark and light themes  
 🔒 **Secure** — Encrypted credential storage  
 📍 **Always on Top** — User-controlled, stays visible across all workspaces  
-💾 **System Tray** — Minimizes to tray for easy access  
+💾 **System Tray** — Minimizes to tray for easy access, with optional session and weekly percentage icons  
+🪟 **Taskbar Stats** *(Windows)* — The taskbar icon itself shows both percentages, so usage is visible without opening the widget  
 ⚙️ **Settings Panel** — Persistent preferences for startup, theme, tray, thresholds, and date/time formats  
 🔔 **Usage Alerts** — Desktop notifications when usage crosses configurable warn/danger thresholds  
 🔔 **Update Notifications** — Automatic check for new releases on startup  
@@ -71,6 +72,8 @@ The Extra Usage row now displays the correct currency symbol based on your accou
 
 - ⚙️ **Launch at startup** — Auto-start with Windows or macOS login
 - 📌 **Hide from taskbar** — Tray-only mode
+- 💾 **Show tray stats** — Session and weekly percentage icons in the system tray
+- 🪟 **Taskbar stats** *(Windows only)* — Draws both percentages onto the taskbar icon. Unavailable while **Hide from taskbar** is on, since there is no taskbar button to draw on
 - 🎨 **Theme selector** — Dark / Light / System
 - ⚠️ **Warning thresholds** — Configurable amber and red levels for usage bars
 - 🔔 **Usage alerts** — Desktop notifications at warn/danger thresholds
@@ -209,6 +212,17 @@ Right-click the tray icon for: Show/Hide, Refresh, Re-login, Settings, Exit.
 - 🟣 Purple: Normal usage (below warning threshold, default 75%)
 - 🟠 Orange: High usage (above warning threshold)
 - 🔴 Red: Critical usage (above danger threshold, default 90%)
+
+### Tray & Taskbar Icons
+
+Both icon types are redrawn on every refresh and follow the same threshold colors as the usage bars — purple/blue below the warning threshold, amber above it, red above the danger threshold. At **99% or above** the number is replaced by a white ✕.
+
+| Icon | Setting | What it shows |
+|------|---------|---------------|
+| System tray | **Show tray stats** | Two icons side by side — weekly (blue) on the left, session (purple) on the right. Hover for the exact percentage and reset time |
+| Taskbar *(Windows)* | **Taskbar stats** | A single icon split in half — session (purple) on the left, weekly (blue) on the right |
+
+> **Note:** Taskbar stats are Windows-only. macOS ignores per-window icons, and Linux desktops generally take the taskbar icon from the `.desktop` entry rather than the app. Turning on **Hide from taskbar** removes the taskbar button altogether, so the setting is disabled while that mode is active and your choice is restored when you switch it back off.
 
 ---
 

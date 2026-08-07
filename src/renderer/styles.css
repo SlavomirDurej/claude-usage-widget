@@ -1094,6 +1094,41 @@ body.theme-light .settings-disclaimer {
     flex-shrink: 0;
 }
 
+.repo-btn {
+    background: transparent;
+    color: #9090b0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.repo-btn svg {
+    display: block;
+}
+
+.repo-btn:hover {
+    color: #e0e0f0;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.28);
+}
+
+body.theme-light .repo-btn {
+    color: #7070a0;
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+body.theme-light .repo-btn:hover {
+    color: #202040;
+    background: rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.28);
+}
+
 .logout-btn {
     background: transparent;
     color: #ef4444;
