@@ -63,14 +63,23 @@ Only after RC testing passes and enough changes have accumulated on `develop` to
 
 5. **Tag push triggers the three platform builds.** Monitor Actions.
 
-6. **After release, bump `develop` to next dev version:**
+6. **After release, bump `develop` to the next cycle's RC version:**
    ```
    git checkout develop
-   # Update package.json version to X.Y.(Z+1)-dev
-   git add package.json
-   git commit -m "chore: mark develop as X.Y.(Z+1)-dev"
+   git merge main --no-edit   # sync develop with main (fast-uri fixes, docs, etc.)
+   # Update package.json version to X.Y.(Z+1)-rc.1 (no -dev placeholder — we cut straight to rc.1)
+   git add package.json package-lock.json
+   git commit -m "chore: start vX.Y.(Z+1)-rc.1 cycle on develop"
    git push origin develop
    ```
+
+7. **Reset `STAGED_CHANGES.md`** back to its empty template now that its entries live permanently in `RELEASE_NOTES_1.7.X.md`.
+
+8. **Clean up superseded RC releases and tags.** Claude should proactively remind you of this step at formal release time — don't wait to be asked:
+   - Confirm the new stable release built and published successfully first.
+   - You delete each superseded `vX.Y.Z-rc.N` release in the GitHub UI (Claude doesn't have delete access there).
+   - Claude then deletes the matching tags: `git push origin :refs/tags/vX.Y.Z-rc.N && git tag -d vX.Y.Z-rc.N` for each.
+   - Order matters: release before tag, same as the mid-cycle cleanup above, to avoid orphaned drafts.
 
 ---
 
