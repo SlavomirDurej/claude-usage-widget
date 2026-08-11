@@ -1316,6 +1316,9 @@ function formatResetsAt(resetsAt, isWeekly, timeFormat, weeklyDateFormat) {
         const fmt = weeklyDateFormat || 'date';
         if (fmt === 'date-day') return `${dayStr} ${monthStr} ${dayNum}`;
         if (fmt === 'date-day-time') return `${dayStr} ${monthStr} ${dayNum} ${formatTime(date)}`;
+        if (fmt === 'date-dmy') return `${dayNum} ${monthStr}`;
+        if (fmt === 'date-day-dmy') return `${dayStr} ${dayNum} ${monthStr}`;
+        if (fmt === 'date-day-time-dmy') return `${dayStr} ${dayNum} ${monthStr} ${formatTime(date)}`;
         return `${monthStr} ${dayNum}`; // default: 'date'
     } else {
         return formatTime(date);

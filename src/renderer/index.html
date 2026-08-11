@@ -360,9 +360,16 @@
                             <div class="settings-col">
                                 <span class="settings-row-label">Date format</span>
                                 <select id="weeklyDateFormat" class="settings-select">
-                                    <option value="date">Mar 13</option>
-                                    <option value="date-day">Fri Mar 13</option>
-                                    <option value="date-day-time">Fri Mar 13 + time</option>
+                                    <optgroup label="Month Day">
+                                        <option value="date">Mar 13</option>
+                                        <option value="date-day">Fri Mar 13</option>
+                                        <option value="date-day-time">Fri Mar 13 + time</option>
+                                    </optgroup>
+                                    <optgroup label="Day Month">
+                                        <option value="date-dmy">13 Mar</option>
+                                        <option value="date-day-dmy">Fri 13 Mar</option>
+                                        <option value="date-day-time-dmy">Fri 13 Mar + time</option>
+                                    </optgroup>
                                 </select>
                             </div>
                             <div class="settings-col">
