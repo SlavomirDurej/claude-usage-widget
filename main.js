@@ -262,6 +262,7 @@ function showMainWindowSmart() {
       mainWindow.show();
       mainWindow.focus();
     }
+    updateTaskbarIcon(store.get('latestUsageData'));
     return;
   }
   const bounds = mainWindow.getBounds();
@@ -274,6 +275,11 @@ function showMainWindowSmart() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+  // Redraw both taskbar icons immediately on restore — needed because hiding
+  // to tray (mainWindow.on('minimize')/weekly click handler, when a tray icon
+  // exists) tears the weekly window down entirely, and otherwise it wouldn't
+  // reappear until the next periodic usage refresh.
+  updateTaskbarIcon(store.get('latestUsageData'));
 }
 
 function createMainWindow() {
@@ -305,6 +311,21 @@ function createMainWindow() {
 
   mainWindow = new BrowserWindow(windowOptions);
   mainWindow.loadFile('src/renderer/index.html');
+  // Overrides index.html's <title> for taskbar hover text specifically —
+  // "Claude Usage Widget" doesn't distinguish it from the weekly window.
+  // loadFile() is async, so the page's own <title> would otherwise overwrite
+  // this once it finishes loading — block that instead of racing it.
+  mainWindow.setTitle('Claude Usage: Daily');
+  mainWindow.on('page-title-updated', (event) => {
+    event.preventDefault();
+  });
+  // Belt-and-suspenders: reapply once the page actually finishes loading too,
+  // in case something else reasserts the page title before the listener above
+  // is attached, or the title needs to be present before then for the taskbar
+  // to pick it up.
+  mainWindow.webContents.once('did-finish-load', () => {
+    mainWindow.setTitle('Claude Usage: Daily');
+  });
 
   let positionSaveTimer = null;
   mainWindow.on('move', () => {
@@ -315,17 +336,18 @@ function createMainWindow() {
     }, 300);
   });
 
-  // Single interception point for ANY close request — native taskbar
-  // "Close window", Alt+F4, or the in-app close button (which now just
-  // calls mainWindow.close() and lets this decide). Only hide-to-tray when
-  // there's an actual tray icon to bring it back via; otherwise let it
-  // close normally so window-all-closed below can quit the process.
+  // Close (X button, Alt+F4, or "Close window" from either taskbar button's
+  // right-click menu — all send the same close signal) always quits the app
+  // outright now. Minimize (the app's own − button) is the dedicated way to
+  // tuck it away while keeping a tray/taskbar icon as the way back in.
   mainWindow.on('close', (event) => {
     if (isQuitting) return;
-    if (hasTrayIcon()) {
-      event.preventDefault();
-      mainWindow.hide();
-    }
+    event.preventDefault();
+    isQuitting = true;
+    destroyWeeklyTaskbarWindow();
+    destroyTrayIcons();
+    mainWindow.destroy();
+    app.exit(0);
   });
 
   mainWindow.on('closed', () => {
@@ -686,8 +708,274 @@ function generateRedXIcon() {
   return nativeImage.createFromBuffer(buffer, { width, height });
 }
 
+/**
+ * Single-icon taskbar geometry. Each of the two taskbar buttons (main window
+ * for session, the paired invisible window for weekly) gets the full 128x128
+ * icon to itself, rather than splitting one icon in half — a single digit and
+ * a double digit both get the full available width, so they render at a
+ * consistent size instead of the mismatched scaling a split icon produces.
+ * Ported from bastionecho's PR #115 pixel-drawing helpers (fillRect,
+ * drawCharScaled, drawXGlyph, drawTaskbarPanel), adapted for single-panel use.
+ */
+const TASKBAR_ICON_SIZE = 128;
+const TASKBAR_PANEL_PADDING = 3;
+const TASKBAR_MAX_GLYPH_SCALE = 4.5;
 
+/**
+ * Fill a rectangle in a BGRA buffer, clipping to the buffer bounds
+ */
+function fillRect(buffer, width, height, x, y, w, h, color, alpha = 255) {
+  const x0 = Math.max(0, Math.round(x));
+  const y0 = Math.max(0, Math.round(y));
+  const x1 = Math.min(width, Math.round(x + w));
+  const y1 = Math.min(height, Math.round(y + h));
 
+  for (let py = y0; py < y1; py++) {
+    for (let px = x0; px < x1; px++) {
+      const offset = (py * width + px) * 4;
+      buffer[offset] = color.b;
+      buffer[offset + 1] = color.g;
+      buffer[offset + 2] = color.r;
+      buffer[offset + 3] = alpha;
+    }
+  }
+}
+
+/**
+ * Draw a bitmap character scaled by an arbitrary (possibly fractional) factor.
+ * Nearest-neighbour sampling is fine here because the 128px master is always
+ * resampled by Windows before it reaches the screen.
+ */
+function drawCharScaled(buffer, width, height, char, x, y, scale, color, useNarrow = false) {
+  const charWidth = useNarrow ? 6 : 8;
+  const bitmap = useNarrow ? BITMAP_FONT_NARROW[char] : BITMAP_FONT[char];
+  if (!bitmap) return charWidth * scale;
+
+  const charHeight = 11;
+  const maxCol = charWidth - 1;
+  const destWidth = Math.round(charWidth * scale);
+  const destHeight = Math.round(charHeight * scale);
+  const originX = Math.round(x);
+  const originY = Math.round(y);
+
+  for (let dy = 0; dy < destHeight; dy++) {
+    const row = Math.min(charHeight - 1, Math.floor(dy / scale));
+    for (let dx = 0; dx < destWidth; dx++) {
+      const col = Math.min(charWidth - 1, Math.floor(dx / scale));
+      if (!(bitmap[row] & (1 << (maxCol - col)))) continue;
+
+      const px = originX + dx;
+      const py = originY + dy;
+      if (px < 0 || px >= width || py < 0 || py >= height) continue;
+
+      const offset = (py * width + px) * 4;
+      buffer[offset] = color.b;
+      buffer[offset + 1] = color.g;
+      buffer[offset + 2] = color.r;
+      buffer[offset + 3] = color.a;
+    }
+  }
+  return charWidth * scale;
+}
+
+/**
+ * Draw an X glyph centered on (cx, cy), matching the tray's maxed-out icon
+ */
+function drawXGlyph(buffer, width, height, cx, cy, radius, thickness, color) {
+  const halfThickness = thickness / 2;
+  const steps = Math.max(1, Math.round(radius * 2));
+
+  for (let i = 0; i <= steps; i++) {
+    const offset = -radius + (i / steps) * radius * 2;
+    const x = cx + offset;
+    fillRect(buffer, width, height, x - halfThickness, cy + offset - halfThickness, thickness, thickness, color);
+    fillRect(buffer, width, height, x - halfThickness, cy - offset - halfThickness, thickness, thickness, color);
+  }
+}
+
+/**
+ * Draw a single-panel taskbar icon: fills the whole 128x128 square with the
+ * threshold color and the percentage, full-width — no half-icon split.
+ */
+function drawTaskbarPanel(buffer, size, percent, bgColor) {
+  fillRect(buffer, size, size, 0, 0, size, size, bgColor);
+
+  const white = { r: 255, g: 255, b: 255, a: 255 };
+
+  // 99%+ shows an X instead of a number, same as the tray icons
+  if (percent >= 99) {
+    const radius = (size - TASKBAR_PANEL_PADDING * 2) / 2.6;
+    drawXGlyph(buffer, size, size, size / 2, size / 2, radius, Math.max(2, radius / 2.5), white);
+    return;
+  }
+
+  const text = Math.round(percent).toString();
+  const useNarrow = text.length >= 3;
+  const glyphWidth = useNarrow ? 6 : 8;
+  const gapUnits = 1;
+
+  // Scale digits to fill the full icon width now, rather than half of it —
+  // this is what fixes the illegible-at-real-size problem the split icon had.
+  const units = text.length * glyphWidth + (text.length - 1) * gapUnits;
+  const usableWidth = size - TASKBAR_PANEL_PADDING * 2;
+  const scale = Math.min(usableWidth / units, TASKBAR_MAX_GLYPH_SCALE);
+
+  let x = (size - units * scale) / 2;
+  const y = (size - 11 * scale) / 2;
+
+  for (const char of text) {
+    drawCharScaled(buffer, size, size, char, x, y, scale, white, useNarrow);
+    x += (glyphWidth + gapUnits) * scale;
+  }
+}
+
+/**
+ * Generate a single-number taskbar icon (session OR weekly, not split).
+ * @param {number} percent - Usage percentage (0-100)
+ * @param {boolean} isSession - true for session (purple), false for weekly (blue)
+ * @param {number} warnThreshold - Percentage at which the icon turns amber
+ * @param {number} dangerThreshold - Percentage at which the icon turns red
+ * @returns {NativeImage} Generated taskbar icon
+ */
+function generateSingleTaskbarIcon(percent, isSession, warnThreshold, dangerThreshold) {
+  const size = TASKBAR_ICON_SIZE;
+  const buffer = Buffer.alloc(size * size * 4);
+  const maxedColor = { r: 220, g: 53, b: 69 }; // #dc3545, same red as the tray X
+
+  const color = percent >= 99
+    ? maxedColor
+    : getBackgroundColor(percent, isSession, warnThreshold, dangerThreshold);
+
+  drawTaskbarPanel(buffer, size, percent, color);
+
+  return nativeImage.createFromBuffer(buffer, { width: size, height: size });
+}
+
+/**
+ * Second, invisible taskbar window paired with the main window. Its only
+ * purpose is to hold a second taskbar button for the weekly-usage icon —
+ * Windows only grants a taskbar button per top-level window, so a second
+ * icon needs a second (real, if content-less) window behind it.
+ */
+let weeklyTaskbarWindow = null;
+
+function createWeeklyTaskbarWindow() {
+  if (weeklyTaskbarWindow && !weeklyTaskbarWindow.isDestroyed()) return;
+
+  weeklyTaskbarWindow = new BrowserWindow({
+    // Not 1x1: Windows sizes the hover-flyout preview box to match the
+    // window's actual dimensions, so a 1x1 window produces a tiny flyout
+    // that truncates the title text. Larger (but still never actually shown
+    // — always minimized immediately below) gives the flyout room to render
+    // "Claude Usage: Weekly" in full.
+    width: WIDGET_WIDTH,
+    height: WIDGET_HEIGHT,
+    frame: false,
+    show: false,
+    skipTaskbar: false,
+    resizable: false,
+    minimizable: true,
+    maximizable: false,
+    fullscreenable: false,
+    title: 'Claude Usage: Weekly',
+    icon: path.join(__dirname, 'assets/icon.ico'),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  weeklyTaskbarWindow.loadURL('data:text/html,<title>Claude Usage: Weekly</title>');
+  weeklyTaskbarWindow.setSkipTaskbar(false);
+  weeklyTaskbarWindow.webContents.once('did-finish-load', () => {
+    if (weeklyTaskbarWindow && !weeklyTaskbarWindow.isDestroyed()) {
+      weeklyTaskbarWindow.setTitle('Claude Usage: Weekly');
+    }
+  });
+
+  // Windows groups taskbar buttons by AppUserModelID, not by window — both
+  // windows otherwise inherit the app-wide AUMID set via setAppUserModelId()
+  // at startup, so they'd cluster into one grouped button no matter what the
+  // system's "combine buttons" setting is. Giving this window its own AUMID
+  // splits it into a genuinely separate button. The main window is left on
+  // the original app-wide AUMID so a pinned taskbar shortcut still matches it.
+  if (process.platform === 'win32') {
+    try {
+      weeklyTaskbarWindow.setAppDetails({ appId: 'com.claudeusage.widget.weekly' });
+    } catch (error) {
+      console.error('Failed to set weekly taskbar window AppUserModelID:', error);
+    }
+  }
+
+  // Created once and kept alive for the app's whole lifetime — never
+  // destroyed/recreated during normal toggling (see setSkipTaskbar calls in
+  // resetTaskbarIcon/updateTaskbarIcon below), since destroy-then-recreate
+  // was the direct cause of a repeated visible flash. Calling minimize()
+  // directly, without ever calling show() first, creates it already in a
+  // minimized state — Windows still grants it a taskbar button (minimized
+  // windows are WS_VISIBLE, just iconified), but no restored frame is ever
+  // painted, so there's nothing to flash on screen at any point, including
+  // app startup.
+  weeklyTaskbarWindow.minimize();
+
+  // Clicking its taskbar button fires 'restore'. Re-minimize via setTimeout(0)
+  // — this is the confirmed-working, tested version. A synchronous minimize()
+  // call inside the same 'restore' tick caused a rapid restore/minimize loop
+  // (many toggles per second) during testing; the brief cosmetic flash this
+  // defer allows is a much smaller cost than that loop.
+  let handlingRestore = false;
+  weeklyTaskbarWindow.on('restore', () => {
+    if (handlingRestore) return;
+    handlingRestore = true;
+
+    setTimeout(() => {
+      if (weeklyTaskbarWindow && !weeklyTaskbarWindow.isDestroyed()) {
+        weeklyTaskbarWindow.minimize();
+      }
+      handlingRestore = false;
+    }, 0);
+
+    if (isMainWindowShownOnScreen()) {
+      // hide() removes mainWindow's own taskbar button entirely, unlike
+      // minimize() — only worth doing when tray icons exist as the way
+      // back in; otherwise minimize keeps both taskbar buttons visible,
+      // matching how clicking the session icon natively already behaves.
+      if (hasTrayIcon()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.minimize();
+      }
+    } else {
+      showMainWindowSmart();
+    }
+  });
+
+  // "Close window" from this button's own right-click menu should quit the
+  // whole app too, not just this window — otherwise mainWindow would be left
+  // running orphaned with no obvious way to reach it.
+  weeklyTaskbarWindow.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    isQuitting = true;
+    destroyWeeklyTaskbarWindow();
+    destroyTrayIcons();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.destroy();
+    }
+    app.exit(0);
+  });
+
+  weeklyTaskbarWindow.on('closed', () => {
+    weeklyTaskbarWindow = null;
+  });
+}
+
+function destroyWeeklyTaskbarWindow() {
+  if (weeklyTaskbarWindow && !weeklyTaskbarWindow.isDestroyed()) {
+    weeklyTaskbarWindow.destroy();
+  }
+  weeklyTaskbarWindow = null;
+}
 
 function createTray() {
   // Respect the tray stats setting even when createTray is called from generic refresh paths.
@@ -752,7 +1040,16 @@ function createTray() {
       {
         label: 'Exit',
         click: () => {
-          app.quit();
+          // Bypasses the normal close/before-quit/window-all-closed event
+          // cascade entirely rather than relying on it to resolve correctly —
+          // force-destroy everything directly, then hard-exit the process.
+          isQuitting = true;
+          destroyWeeklyTaskbarWindow();
+          destroyTrayIcons();
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.destroy();
+          }
+          app.exit(0);
         }
       }
     ]);
@@ -925,6 +1222,70 @@ function updateTrayIcon(usageData) {
     }
   } catch (error) {
     console.error('Failed to update tray icons:', error);
+  }
+}
+
+/**
+ * Restore the bundled application icon on the main window's taskbar button,
+ * and hide the weekly window's taskbar button (it stays alive, just hidden).
+ */
+function resetTaskbarIcon() {
+  if (process.platform !== 'win32') return;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.setIcon(path.join(__dirname, 'assets/icon.ico'));
+    } catch (error) {
+      console.error('Failed to reset taskbar icon:', error);
+    }
+  }
+  // Hide (not destroy) the weekly window's taskbar button — it stays alive,
+  // already-minimized, for the app's whole lifetime. Destroying and
+  // recreating it on every toggle was the direct cause of a repeated visible
+  // flash; setSkipTaskbar is fully reversible without ever showing it again.
+  if (weeklyTaskbarWindow && !weeklyTaskbarWindow.isDestroyed()) {
+    weeklyTaskbarWindow.setSkipTaskbar(true);
+  }
+}
+
+/**
+ * Update the two Windows taskbar buttons with current usage: session on the
+ * main window's own button, weekly on the paired invisible window's button.
+ * Windows only — setIcon() is a no-op on macOS, and Linux desktops generally
+ * take the taskbar icon from the .desktop entry rather than the window.
+ * @param {Object} usageData - Usage data object containing session and weekly percentages
+ */
+function updateTaskbarIcon(usageData) {
+  if (process.platform !== 'win32') return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  // "Hide from taskbar" removes the main window's taskbar button entirely, so
+  // there is nothing to draw on for either icon — tear both down.
+  const hiddenFromTaskbar = store.get('settings.minimizeToTray', false);
+  if (hiddenFromTaskbar || !store.get('settings.showTaskbarStats', false)) {
+    resetTaskbarIcon();
+    return;
+  }
+
+  // Keep the default icon until there is something real to draw
+  if (!usageData) return;
+
+  createWeeklyTaskbarWindow();
+  if (weeklyTaskbarWindow && !weeklyTaskbarWindow.isDestroyed()) {
+    weeklyTaskbarWindow.setSkipTaskbar(false);
+  }
+
+  const warnThreshold = store.get('settings.warnThreshold', 75);
+  const dangerThreshold = store.get('settings.dangerThreshold', 90);
+  const sessionPercent = usageData?.five_hour?.utilization || 0;
+  const weeklyPercent = usageData?.seven_day?.utilization || 0;
+
+  try {
+    mainWindow.setIcon(generateSingleTaskbarIcon(sessionPercent, true, warnThreshold, dangerThreshold));
+    if (weeklyTaskbarWindow && !weeklyTaskbarWindow.isDestroyed()) {
+      weeklyTaskbarWindow.setIcon(generateSingleTaskbarIcon(weeklyPercent, false, warnThreshold, dangerThreshold));
+    }
+  } catch (error) {
+    console.error('Failed to update taskbar icons:', error);
   }
 }
 
@@ -1152,7 +1513,8 @@ ipcMain.handle('get-settings', () => {
     graphVisible: store.get('settings.graphVisible', false),
     expandedOpen: store.get('settings.expandedOpen', false),
     compactSpendOpen: store.get('settings.compactSpendOpen', false),
-    showTrayStats: store.get('settings.showTrayStats', false)
+    showTrayStats: store.get('settings.showTrayStats', false),
+    showTaskbarStats: store.get('settings.showTaskbarStats', false)
   };
 });
 
@@ -1179,6 +1541,7 @@ ipcMain.handle('save-settings', (event, settings) => {
     store.set('settings.compactSpendOpen', settings.compactSpendOpen);
   }
   store.set('settings.showTrayStats', settings.showTrayStats);
+  store.set('settings.showTaskbarStats', settings.showTaskbarStats !== false);
 
   const isPortable = process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_FILE;
 
@@ -1202,12 +1565,13 @@ ipcMain.handle('save-settings', (event, settings) => {
     mainWindow.setAlwaysOnTop(settings.alwaysOnTop, 'floating');
   }
 
+  const latestUsageData = store.get('latestUsageData');
+
   if (!settings.showTrayStats) {
     // Remove tray icons immediately when the setting is turned off from the UI.
     destroyTrayIcons();
   } else {
     // Refresh tray icons immediately with new threshold settings
-    const latestUsageData = store.get('latestUsageData');
     if (latestUsageData) {
       updateTrayIcon(latestUsageData);
     } else {
@@ -1215,6 +1579,10 @@ ipcMain.handle('save-settings', (event, settings) => {
       createTray();
     }
   }
+
+  // Apply the taskbar icon change (or tear down the weekly window) without
+  // waiting for the next refresh. Also handles "Hide from taskbar" hiding both.
+  updateTaskbarIcon(latestUsageData);
 
   return true;
 });
@@ -1620,8 +1988,9 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Store latest usage data for settings refresh
   store.set('latestUsageData', data);
 
-  // Update tray icon with current usage data
+  // Update tray and taskbar icons with current usage data
   updateTrayIcon(data);
+  updateTaskbarIcon(data);
 
   // Keep the compact window sized correctly if the Fable row just appeared/disappeared
   if (mainWindow && !mainWindow.isDestroyed() && store.get('settings.compactMode', false)) {
@@ -1671,6 +2040,15 @@ app.whenReady().then(async () => {
   if (store.get('settings.showTrayStats', false)) {
     createTray();
   }
+  // Created once, unconditionally, regardless of the taskbar-stats setting —
+  // it stays alive for the app's whole lifetime; updateTaskbarIcon() right
+  // below decides whether its taskbar button is actually visible.
+  if (process.platform === 'win32') {
+    createWeeklyTaskbarWindow();
+  }
+  // Show the last known usage on the taskbar immediately instead of waiting
+  // for the first refresh to come back.
+  updateTaskbarIcon(store.get('latestUsageData'));
 
   // Clear any stale Jump List tasks from earlier builds (the removed
   // taskbar "Center App" task). Windows caches setUserTasks() entries
@@ -1721,6 +2099,11 @@ app.on('window-all-closed', () => {
 // quit apart from a click on the close button to just minimize.
 app.on('before-quit', () => {
   isQuitting = true;
+  // window-all-closed only fires once zero BrowserWindow instances remain,
+  // regardless of hidden/minimized state — the invisible weekly-stats window
+  // has to go down on every real quit path too, or it would silently keep
+  // the app alive with no visible window and no way back in.
+  destroyWeeklyTaskbarWindow();
 });
 
 app.on('activate', () => {
