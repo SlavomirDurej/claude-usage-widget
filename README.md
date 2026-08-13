@@ -254,6 +254,7 @@ Special thanks to these contributors who have improved the widget:
 - [@gastyg](https://github.com/gastyg) - Fable row for compact mode
 - [@irishpolyglot](https://github.com/irishpolyglot) - Fable timer-pairing bug fix
 - [@bastionecho](https://github.com/bastionecho) - Original taskbar usage icon concept and pixel-drawing implementation (PR #115)
+- [@adihebbalae](https://github.com/adihebbalae) - Identified the silent-logout bug in session key decryption fallback (PR #110)
 
 ---
 
