@@ -2097,8 +2097,19 @@ app.whenReady().then(async () => {
   setInterval(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       const alwaysOnTopSetting = store.get('settings.alwaysOnTop', true);
-      if (alwaysOnTopSetting) {
+      // Only actually call setAlwaysOnTop() when it's genuinely needed (the
+      // window has actually been knocked off top), not unconditionally every
+      // 5 seconds regardless of state. Calling it ~720 times/hour regardless
+      // was found to correlate with the main window's taskbar icon
+      // eventually degrading to the generic Electron icon on a long-running
+      // session — only mainWindow is subject to this interval, and it's the
+      // only taskbar icon that ever showed this symptom. Checking first
+      // means the call only fires on actual disruptions, which should be
+      // rare — and redrawing the icon right after covers the case it does
+      // fire, regardless of whether that theory is the full explanation.
+      if (alwaysOnTopSetting && !mainWindow.isAlwaysOnTop()) {
         mainWindow.setAlwaysOnTop(true, 'floating');
+        updateTaskbarIcon(store.get('latestUsageData'));
       }
     }
   }, 5000);
