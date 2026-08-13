@@ -872,7 +872,12 @@ function createWeeklyTaskbarWindow() {
     height: WIDGET_HEIGHT,
     frame: false,
     show: false,
-    skipTaskbar: false,
+    // Starts hidden from the taskbar, not visible — updateTaskbarIcon() is
+    // what decides whether to actually show it, based on the real setting.
+    // Defaulting to visible-then-hide-later left a startup window (and any
+    // moment updateTaskbarIcon() hadn't yet run) where the button showed
+    // regardless of whether "Show taskbar stats" was even on.
+    skipTaskbar: true,
     resizable: false,
     minimizable: true,
     maximizable: false,
@@ -886,7 +891,10 @@ function createWeeklyTaskbarWindow() {
   });
 
   weeklyTaskbarWindow.loadURL('data:text/html,<title>Claude Usage: Weekly</title>');
-  weeklyTaskbarWindow.setSkipTaskbar(false);
+  // No setSkipTaskbar(false) here — visibility is controlled exclusively by
+  // updateTaskbarIcon()/resetTaskbarIcon() based on the actual setting, not
+  // by creation. This line used to unconditionally show it immediately,
+  // which defeated the constructor's skipTaskbar:true default above.
   weeklyTaskbarWindow.webContents.once('did-finish-load', () => {
     if (weeklyTaskbarWindow && !weeklyTaskbarWindow.isDestroyed()) {
       weeklyTaskbarWindow.setTitle('Claude Usage: Weekly');
