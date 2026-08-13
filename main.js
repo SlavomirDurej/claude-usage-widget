@@ -8,28 +8,36 @@ const { normalizeUsageLimits } = require('./src/normalize-usage-limits');
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
 
-// Required for Windows taskbar features (notifications, Jump List tasks) to register
-// reliably under one stable identity — without this, dev (npm start) and packaged
-// builds show up as generic "Electron" and custom Jump List tasks may not appear.
-// Matches package.json build.appId so dev and packaged runs share the same identity.
-if (process.platform === 'win32') {
-  app.setAppUserModelId('com.claudeusage.widget');
-}
-
-
 // Profile isolation: --profile=<name> launches a fully separate instance with its own
 // session, cookies, and settings. Must be set before anything reads app.getPath('userData').
 const fs = require('fs');
 const os = require('os');
 const profileArg = process.argv.find(a => a.startsWith('--profile='));
+let profileName = null;
 if (profileArg) {
-  const profileName = profileArg.split('=')[1].replace(/[^a-zA-Z0-9_-]/g, '_');
+  profileName = profileArg.split('=')[1].replace(/[^a-zA-Z0-9_-]/g, '_');
   const profilePath = path.join(app.getPath('userData'), 'profiles', profileName);
   app.setPath('userData', profilePath);
   // Always logged (not gated behind DEBUG_LOG) so multi-instance bug reports can be
   // triaged from terminal output alone: confirms which profile resolved to which
   // userData root, distinguishing profile-folder isolation from org-ID isolation.
   console.log(`[Profile] Using profile "${profileName}" -> userData: ${profilePath}`);
+}
+
+// Required for Windows taskbar features (notifications, Jump List tasks) to register
+// reliably under one stable identity — without this, dev (npm start) and packaged
+// builds show up as generic "Electron" and custom Jump List tasks may not appear.
+// Matches package.json build.appId so dev and packaged runs share the same identity.
+// Profile-scoped (not the same identity for every --profile instance): two profiles
+// sharing one AUMID would have their taskbar buttons grouped by Windows into one
+// entry, the same clustering problem the weekly taskbar icon needed its own AUMID
+// to avoid. This suffix is stable per profile name, not regenerated per launch —
+// each profile just gets its own permanent, separate identity.
+if (process.platform === 'win32') {
+  const aumid = profileName
+    ? `com.claudeusage.widget.profile-${profileName}`
+    : 'com.claudeusage.widget';
+  app.setAppUserModelId(aumid);
 }
 
 // Migration: Handle old encrypted config files from v1.7.0 and earlier
@@ -907,9 +915,15 @@ function createWeeklyTaskbarWindow() {
   // system's "combine buttons" setting is. Giving this window its own AUMID
   // splits it into a genuinely separate button. The main window is left on
   // the original app-wide AUMID so a pinned taskbar shortcut still matches it.
+  // Also profile-scoped, same as the main AUMID above: two profiles running
+  // taskbar stats simultaneously would otherwise have their weekly buttons
+  // grouped together too.
   if (process.platform === 'win32') {
     try {
-      weeklyTaskbarWindow.setAppDetails({ appId: 'com.claudeusage.widget.weekly' });
+      const weeklyAumid = profileName
+        ? `com.claudeusage.widget.profile-${profileName}.weekly`
+        : 'com.claudeusage.widget.weekly';
+      weeklyTaskbarWindow.setAppDetails({ appId: weeklyAumid });
     } catch (error) {
       console.error('Failed to set weekly taskbar window AppUserModelID:', error);
     }
