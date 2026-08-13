@@ -1466,20 +1466,56 @@ function showMainContent() {
 }
 
 // Auto-update management
-function startAutoUpdate() {
-    stopAutoUpdate();
+// Jitter cap: ±25% of the configured interval, so a herd of widget instances
+// does not all hit Claude.ai at exactly the same tick. Applied to the delay
+// before each fetch, not the timer period itself, so a slow fetch does not
+// cause a missed tick. (credit: mtspl, PR #114, for the jitter design)
+const JITTER_FRACTION = 0.25;
+let _autoUpdateStopped = true;
+
+function scheduleAutoUpdate() {
+    // Clear any pending timer directly here — deliberately NOT calling
+    // stopAutoUpdate() for this internal cleanup step, since that also sets
+    // _autoUpdateStopped = true as a side effect. Reusing it here was the
+    // actual bug in PR #114's original version as submitted: nothing ever
+    // reset the flag back to false before the recursive
+    // `if (!_autoUpdateStopped) scheduleAutoUpdate()` check at the end of
+    // each tick ran, so auto-refresh fired once after startAutoUpdate() and
+    // then silently died for the rest of the session — every time, not
+    // under some rare timing condition. Found and fixed during review
+    // before merging, confirmed via a live multi-cycle test.
+    if (updateInterval) {
+        clearTimeout(updateInterval);
+        updateInterval = null;
+    }
     const settings = window._cachedSettings || {};
     const intervalSecs = parseInt(settings.refreshInterval) || 300;
-    updateInterval = setInterval(async () => {
+    const baseMs = intervalSecs * 1000;
+    const jitter = baseMs * JITTER_FRACTION * (Math.random() * 2 - 1);
+    const delay = Math.max(1000, Math.round(baseMs + jitter));
+    updateInterval = setTimeout(async () => {
         if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
-        await fetchUsageData();
-        if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
-    }, intervalSecs * 1000);
+        try {
+            await fetchUsageData();
+        } finally {
+            if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
+            // Schedule the next tick only after this fetch completes (success
+            // or fail), so an in-flight 429 retry never overlaps with the
+            // next auto-refresh.
+            if (!_autoUpdateStopped) scheduleAutoUpdate();
+        }
+    }, delay);
+}
+
+function startAutoUpdate() {
+    _autoUpdateStopped = false;
+    scheduleAutoUpdate();
 }
 
 function stopAutoUpdate() {
+    _autoUpdateStopped = true;
     if (updateInterval) {
-        clearInterval(updateInterval);
+        clearTimeout(updateInterval);
         updateInterval = null;
     }
 }
