@@ -1493,7 +1493,10 @@ function scheduleAutoUpdate() {
     const baseMs = intervalSecs * 1000;
     const jitter = baseMs * JITTER_FRACTION * (Math.random() * 2 - 1);
     const delay = Math.max(1000, Math.round(baseMs + jitter));
+    // TEMPORARY TEST LOGGING — remove before merging this branch.
+    console.log(`[AutoUpdateTest] Scheduling next tick in ${delay}ms (base=${baseMs}ms, stopped=${_autoUpdateStopped})`);
     updateInterval = setTimeout(async () => {
+        console.log(`[AutoUpdateTest] Tick fired at ${new Date().toISOString()}`);
         if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
         try {
             await fetchUsageData();
@@ -1502,6 +1505,7 @@ function scheduleAutoUpdate() {
             // Schedule the next tick only after this fetch completes (success
             // or fail), so an in-flight 429 retry never overlaps with the
             // next auto-refresh.
+            console.log(`[AutoUpdateTest] Fetch settled, stopped=${_autoUpdateStopped}, rescheduling=${!_autoUpdateStopped}`);
             if (!_autoUpdateStopped) scheduleAutoUpdate();
         }
     }, delay);
