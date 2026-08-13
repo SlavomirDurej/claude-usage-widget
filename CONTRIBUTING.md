@@ -257,6 +257,8 @@ Session expired. Test re-login flow from tray menu.
 - Verify `generateSingleTaskbarIcon()` returns valid NativeImage
 - Confirm "Show taskbar stats" is on and "Hide from taskbar" is off in Settings
 - If icons look visually stuck or wrong-sized rather than just stale, restart Explorer before assuming it's a code issue
+- If a taskbar icon refuses to update no matter what the code does — `setIcon()` completes without throwing, but the taskbar button shows a stale or generic default icon regardless — and a reboot, `ie4uinit -ClearIconCache`, and Explorer restart *all* fail to fix it, the cause is likely stale Windows Shell state cached against that window's AppUserModelID specifically (Jump List "Automatic Destinations" data persists separately from the general icon cache and doesn't get cleared by any of the above). Confirm by temporarily setting a brand-new, never-used AUMID (`app.setAppUserModelId()` or `win.setAppDetails({ appId: ... })`) — if the icon immediately starts working, that's the cause. The permanent fix used elsewhere in this codebase is scoping the AUMID per meaningful identity (e.g. per `--profile`) rather than sharing one hardcoded string across every instance.
+- If mainWindow's taskbar icon specifically degrades only after extended runtime (works fine at launch, breaks after an hour or more), check for any code calling `setAlwaysOnTop()` (or similar Z-order-touching APIs) on a tight, unconditional interval — repeated calls appear to correlate with this same kind of AUMID-level icon corruption over time. Guard such intervals with a state check (e.g. `win.isAlwaysOnTop()`) so the call only fires on genuine disruptions, not on a fixed timer regardless of need.
 
 ## Submitting Contributions
 
