@@ -86,9 +86,6 @@ const elements = {
     minimizeToTrayToggle: document.getElementById('minimizeToTrayToggle'),
     alwaysOnTopToggle: document.getElementById('alwaysOnTopToggle'),
     showTrayStatsToggle: document.getElementById('showTrayStatsToggle'),
-    showTaskbarStatsToggle: document.getElementById('showTaskbarStatsToggle'),
-    taskbarStatsCol: document.getElementById('taskbarStatsCol'),
-    taskbarStatsHint: document.getElementById('taskbarStatsHint'),
     warnThreshold: document.getElementById('warnThreshold'),
     dangerThreshold: document.getElementById('dangerThreshold'),
     themeBtns: document.querySelectorAll('.theme-btn'),
@@ -364,13 +361,6 @@ function setupEventListeners() {
         if (elements.minimizeToTrayToggle.checked && !elements.showTrayStatsToggle.checked) {
             elements.showTrayStatsToggle.checked = true;
         }
-        if (!elements.minimizeToTrayToggle.checked) {
-            // Turning "Hide from taskbar" back off should not silently
-            // re-enable Taskbar Stats too — the user has to opt back in
-            // manually, not have it come back on its own.
-            taskbarStatsPreference = false;
-        }
-        syncTaskbarStatsAvailability();
     });
 
     // If user disables "Show Tray Stats", automatically disable "Hide from Taskbar" (prevents app from being completely hidden)
@@ -378,18 +368,7 @@ function setupEventListeners() {
         if (!elements.showTrayStatsToggle.checked && elements.minimizeToTrayToggle.checked) {
             elements.minimizeToTrayToggle.checked = false;
         }
-        syncTaskbarStatsAvailability();
     });
-
-    // Remember the user's own preference so it can be restored when the taskbar
-    // button (and with it the stats icon) becomes available again.
-    if (elements.showTaskbarStatsToggle) {
-        elements.showTaskbarStatsToggle.addEventListener('change', () => {
-            if (!elements.showTaskbarStatsToggle.disabled) {
-                taskbarStatsPreference = elements.showTaskbarStatsToggle.checked;
-            }
-        });
-    }
 
     // Listen for refresh requests from tray
     window.electronAPI.onRefreshUsage(async () => {
@@ -471,7 +450,7 @@ function setupEventListeners() {
         }
         await loadSettings();
         elements.settingsOverlay.style.display = 'flex';
-        window.electronAPI.resizeWindow(measureSettingsHeight());
+        window.electronAPI.resizeWindow(318);
     });
 
     // Close compact settings — apply compact toggle value then close
@@ -1770,67 +1749,8 @@ style.textContent = `
 document.head.appendChild(style);
 
 // Settings management
-const SETTINGS_MIN_HEIGHT = 318;
-const SETTINGS_MAX_HEIGHT = 560;
-
-/**
- * Measure the height the settings panel needs.
- *
- * The panel is absolutely positioned inside the widget, so it can never grow
- * the window on its own — the rows just get squeezed and the footer is
- * clipped. Measuring the natural height (rows temporarily un-flexed so they
- * report their real size) means adding or wrapping a row can't clip the
- * panel again. Ported from bastionecho's PR #115.
- */
-function measureSettingsHeight() {
-    const content = elements.settingsOverlay.querySelector('.settings-content');
-    const rows = content && content.querySelector('.settings-rows');
-    if (!content || !rows) return SETTINGS_MIN_HEIGHT;
-
-    const previousContentHeight = content.style.height;
-    const previousContentWidth = content.style.width;
-    const previousRowsFlex = rows.style.flex;
-
-    content.style.height = 'auto';
-    // Pin the width to the normal (non-compact) widget width — WIDGET_WIDTH in
-    // main.js — so opening settings from compact mode doesn't measure rows
-    // that are still wrapped at the narrow width.
-    content.style.width = '530px';
-    rows.style.flex = 'none';
-    const naturalHeight = content.scrollHeight;
-
-    content.style.height = previousContentHeight;
-    content.style.width = previousContentWidth;
-    rows.style.flex = previousRowsFlex;
-
-    return Math.min(SETTINGS_MAX_HEIGHT, Math.max(SETTINGS_MIN_HEIGHT, Math.ceil(naturalHeight) + 2));
-}
-
 let warnThreshold = 75;
 let dangerThreshold = 90;
-// Last taskbar-stats value the user chose themselves, restored when the toggle
-// is re-enabled after "Hide from taskbar" is switched back off.
-let taskbarStatsPreference = false;
-
-/**
- * Taskbar stats need a taskbar button to draw on, so the toggle is forced off
- * and disabled while "Hide from taskbar" is on — same lock pattern as the
- * Organization column and the Linux "Launch at startup" row.
- */
-function syncTaskbarStatsAvailability() {
-    if (!elements.showTaskbarStatsToggle) return;
-
-    const hiddenFromTaskbar = elements.minimizeToTrayToggle.checked;
-    elements.showTaskbarStatsToggle.disabled = hiddenFromTaskbar;
-    elements.showTaskbarStatsToggle.checked = hiddenFromTaskbar ? false : taskbarStatsPreference;
-
-    if (elements.taskbarStatsCol) {
-        elements.taskbarStatsCol.classList.toggle('settings-col-disabled', hiddenFromTaskbar);
-    }
-    if (elements.taskbarStatsHint) {
-        elements.taskbarStatsHint.style.display = hiddenFromTaskbar ? 'inline' : 'none';
-    }
-}
 
 async function loadSettings() {
     const settings = await window.electronAPI.getSettings();
@@ -1852,17 +1772,6 @@ async function loadSettings() {
     elements.minimizeToTrayToggle.checked = settings.minimizeToTray;
     elements.alwaysOnTopToggle.checked = settings.alwaysOnTop;
     elements.showTrayStatsToggle.checked = settings.showTrayStats || false;
-
-    // Taskbar stats are Windows-only: setIcon() does nothing on macOS, and Linux
-    // desktops take the taskbar icon from the .desktop entry.
-    const isWindows = window.electronAPI.platform === 'win32';
-    if (elements.taskbarStatsCol) {
-        elements.taskbarStatsCol.style.display = isWindows ? '' : 'none';
-    }
-    if (elements.showTaskbarStatsToggle) {
-        taskbarStatsPreference = settings.showTaskbarStats === true;
-        syncTaskbarStatsAvailability();
-    }
     elements.warnThreshold.value = settings.warnThreshold;
     elements.dangerThreshold.value = settings.dangerThreshold;
     elements.timeFormat.value = settings.timeFormat || '12h';
@@ -1908,9 +1817,6 @@ async function saveSettings() {
         minimizeToTray: elements.minimizeToTrayToggle.checked,
         alwaysOnTop: elements.alwaysOnTopToggle.checked,
         showTrayStats: elements.showTrayStatsToggle.checked,
-        // Store the user's own choice, not the forced-off value used while
-        // "Hide from taskbar" is on — so it comes back when they unhide.
-        showTaskbarStats: taskbarStatsPreference,
         theme: activeThemeBtn ? activeThemeBtn.dataset.theme : 'dark',
         warnThreshold: warn,
         dangerThreshold: danger,
