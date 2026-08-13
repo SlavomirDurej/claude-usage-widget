@@ -1897,29 +1897,64 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Fetch endpoints sequentially using a single reused BrowserWindow.
   // This reduces memory overhead compared to creating 3 separate windows.
   // Usage is always required; overage and prepaid are conditional based on UI state.
+  //
+  // Retry policy: transient rate-limit responses (HTTP 429) are retried with
+  // exponential backoff (1s, 5s, 30s, each ±25% jitter) — 1 initial attempt
+  // plus up to MAX_RETRIES retries, 4 attempts total. Session-bound blocks
+  // (Cloudflare challenge, expired cookie, unexpected HTML) are NOT retried —
+  // they would just waste time and rate-limit budget on the same failure.
+  // (credit: mtspl, PR #114, for the retry design)
+  const MAX_RETRIES = 3;
+  const BASE_BACKOFF_MS = [1000, 5000, 30000];
   let usageResult, overageResult, prepaidResult;
-  
-  try {
-    const results = await fetchMultipleViaWindow(urls);
-    
-    // Always have usage result (first in array)
-    usageResult = { status: 'fulfilled', value: results[0] };
-    
-    // Conditionally map overage/prepaid results
-    if (shouldFetchExtended) {
-      overageResult = { status: 'fulfilled', value: results[1] };
-      prepaidResult = { status: 'fulfilled', value: results[2] };
-    } else {
-      // Mark as skipped (not an error, just not fetched)
-      overageResult = { status: 'skipped', reason: 'UI panel not visible' };
-      prepaidResult = { status: 'skipped', reason: 'UI panel not visible' };
+
+  let attempt = 0;
+  while (attempt <= MAX_RETRIES) {
+    try {
+      const results = await fetchMultipleViaWindow(urls);
+
+      // Always have usage result (first in array)
+      usageResult = { status: 'fulfilled', value: results[0] };
+
+      // Conditionally map overage/prepaid results
+      if (shouldFetchExtended) {
+        overageResult = { status: 'fulfilled', value: results[1] };
+        prepaidResult = { status: 'fulfilled', value: results[2] };
+      } else {
+        // Mark as skipped (not an error, just not fetched)
+        overageResult = { status: 'skipped', reason: 'UI panel not visible' };
+        prepaidResult = { status: 'skipped', reason: 'UI panel not visible' };
+      }
+      break;
+    } catch (error) {
+      const isRateLimit = error.message.startsWith('RateLimited');
+      const isSessionBound = error.message.startsWith('CloudflareBlocked')
+        || error.message.startsWith('CloudflareChallenge')
+        || error.message.startsWith('UnexpectedHTML');
+
+      // Session-bound errors: do not retry — propagate immediately so the
+      // caller can prompt re-login. Rate-limited: retry with backoff.
+      if (!isRateLimit || isSessionBound) {
+        usageResult = { status: 'rejected', reason: error };
+        overageResult = { status: 'rejected', reason: error };
+        prepaidResult = { status: 'rejected', reason: error };
+        break;
+      }
+
+      if (attempt >= MAX_RETRIES) {
+        debugLog(`[Retry] Exhausted ${MAX_RETRIES} retries on rate-limit`);
+        usageResult = { status: 'rejected', reason: error };
+        overageResult = { status: 'rejected', reason: error };
+        prepaidResult = { status: 'rejected', reason: error };
+        break;
+      }
+
+      const base = BASE_BACKOFF_MS[attempt];
+      const jitter = base * (0.75 + Math.random() * 0.5); // ±25%
+      debugLog(`[Retry] Rate-limited (attempt ${attempt + 1}/${MAX_RETRIES}); sleeping ${Math.round(jitter)}ms`);
+      await new Promise((r) => setTimeout(r, jitter));
+      attempt++;
     }
-  } catch (error) {
-    // If any fetch fails, determine which one and set appropriate result statuses
-    // For now, if the batch fails, treat usage as failed (required endpoint)
-    usageResult = { status: 'rejected', reason: error };
-    overageResult = { status: 'rejected', reason: error };
-    prepaidResult = { status: 'rejected', reason: error };
   }
 
   // Usage endpoint is mandatory
@@ -1937,6 +1972,12 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
       }
       throw new Error('SessionExpired');
     }
+    // A RateLimited error that exhausted its retries (or any other
+    // unclassified error) falls through here and propagates as-is, keeping
+    // the session intact — the user is not forced to re-login for a
+    // transient upstream throttle. The error message starts with
+    // 'RateLimited:' so the renderer can surface a distinct indicator
+    // rather than treating it like a session expiry.
     throw error;
   }
 
