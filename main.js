@@ -1840,6 +1840,39 @@ function isNewerPreRelease(remote, local) {
 }
 
 ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
+  // TEMPORARY TEST HOOK — remove before merging this branch. Set the
+  // MOCK_CREDIT_SPEND_TEST=1 environment variable to bypass the real API
+  // entirely and alternate between two canned responses on each call, for
+  // testing detectActiveCreditSpend end-to-end (real IPC handler, real
+  // renderer, real progress bar) without needing an account currently
+  // actively spending credits. Deliberately skips storeUsageHistory() so
+  // fake data never pollutes real persisted usage history — only the live
+  // display (latestUsageData, tray/taskbar icons) gets updated.
+  if (process.env.MOCK_CREDIT_SPEND_TEST === '1') {
+    global.__mockCreditSpendCallCount = (global.__mockCreditSpendCallCount || 0) + 1;
+    const isFirstCall = global.__mockCreditSpendCallCount === 1;
+    const data = {
+      five_hour: { utilization: 96, resets_at: new Date(Date.now() + 3600000).toISOString() },
+      seven_day: { utilization: 12, resets_at: new Date(Date.now() + 86400000 * 3).toISOString() },
+      extra_usage: {
+        is_enabled: true,
+        used_cents: isFirstCall ? 5000 : 6500, // increases from the 2nd call onward
+        currency: 'USD',
+      },
+    };
+    normalizeUsageLimits(data);
+    const organizationId = store.get('organizationId');
+    const creditSpendKey = organizationId ? `previousUsedCents_${organizationId}` : 'previousUsedCents';
+    const previousUsedCents = store.get(creditSpendKey, null);
+    const result = detectActiveCreditSpend(data, previousUsedCents);
+    store.set(creditSpendKey, result.usedCents);
+    store.set('latestUsageData', data);
+    updateTrayIcon(data);
+    updateTaskbarIcon(data);
+    console.log(`[MockCreditSpendTest] Call #${global.__mockCreditSpendCallCount}: five_hour=${data.five_hour.utilization}% used_cents=${data.extra_usage.used_cents} (prev=${previousUsedCents}) forced=${!!data.five_hour.credit_spend_forced}`);
+    return data;
+  }
+
   // Use the same credential retrieval logic as get-credentials
   let sessionKey = null;
   if (safeStorage.isEncryptionAvailable()) {
