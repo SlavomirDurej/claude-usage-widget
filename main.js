@@ -4,6 +4,7 @@ const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
 const { normalizeUsageLimits } = require('./src/normalize-usage-limits');
+const { detectActiveCreditSpend } = require('./src/detect-active-credit-spend');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
@@ -2006,6 +2007,23 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   }
 
   storeUsageHistory(data);
+
+  // Force the meter to 100%/critical if credit spend increased since the last
+  // poll while the reported percentage is already near the ceiling — see
+  // detectActiveCreditSpend for the full reasoning. Deliberately AFTER
+  // storeUsageHistory(), not before: the history graph keeps the true
+  // reported percentages, only the live display/icons get the correction.
+  // The comparison value is per-organization, since credit spend is
+  // org-scoped, not per-user or per-installation.
+  {
+    const organizationId = store.get('organizationId');
+    const creditSpendKey = organizationId
+      ? `previousUsedCents_${organizationId}`
+      : 'previousUsedCents';
+    const previousUsedCents = store.get(creditSpendKey, null);
+    const result = detectActiveCreditSpend(data, previousUsedCents);
+    store.set(creditSpendKey, result.usedCents);
+  }
 
   // Store latest usage data for settings refresh
   store.set('latestUsageData', data);
