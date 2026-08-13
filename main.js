@@ -1312,26 +1312,43 @@ function updateTaskbarIcon(usageData) {
   }
 }
 
+// Retrieve the stored session key, decrypting if it was saved encrypted.
+// Two distinct failure modes, handled differently (credit: adihebbalae,
+// PR #110, for identifying both):
+// 1. Encryption is available but no encrypted key exists — the key was
+//    saved back when encryption wasn't available and landed in the legacy
+//    plain `sessionKey` field instead. Fall back to that field: this is a
+//    real, valid key, just stored under the old scheme.
+// 2. Encryption is available, an encrypted key exists, but decryptString()
+//    throws — this is genuine corrupted/unreadable ciphertext (DPAPI key
+//    changed after an OS reinstall, a config folder copied to a different
+//    machine, etc). There's no plain-text key hiding here to fall back to;
+//    that case is already handled by branch 1 above. Returning the raw
+//    ciphertext as if it were a usable key would just change what the
+//    failure looks like (fails against the API instead of cleanly
+//    prompting re-login) without actually fixing anything — so instead,
+//    clear the corrupted entry and return null, which already correctly
+//    routes to the login screen elsewhere in the app.
+function getStoredSessionKey(context = '') {
+  if (safeStorage.isEncryptionAvailable()) {
+    const encrypted = store.get('sessionKey_encrypted');
+    if (!encrypted) return store.get('sessionKey') || null;
+    try {
+      return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
+    } catch (err) {
+      console.error(`[Keychain] Failed to decrypt session key${context}, clearing corrupted entry:`, err.message);
+      store.delete('sessionKey_encrypted');
+      return null;
+    }
+  }
+  // Fallback: plain storage (legacy or safeStorage unavailable)
+  return store.get('sessionKey') || null;
+}
 
 // IPC Handlers
 ipcMain.handle('get-credentials', () => {
-  let sessionKey = null;
-  // Try safeStorage first (OS keychain)
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key:', err.message);
-      }
-    }
-  } else {
-    // Fallback: plain storage (legacy or safeStorage unavailable)
-    sessionKey = store.get('sessionKey');
-  }
   return {
-    sessionKey,
+    sessionKey: getStoredSessionKey(),
     organizationId: store.get('organizationId')
   };
 });
@@ -1841,19 +1858,7 @@ function isNewerPreRelease(remote, local) {
 
 ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Use the same credential retrieval logic as get-credentials
-  let sessionKey = null;
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key:', err.message);
-      }
-    }
-  } else {
-    sessionKey = store.get('sessionKey');
-  }
+  const sessionKey = getStoredSessionKey();
 
   const organizationId = store.get('organizationId');
 
@@ -2054,19 +2059,7 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
 // App lifecycle
 app.whenReady().then(async () => {
   // Restore session cookie if we have stored credentials
-  let sessionKey = null;
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key on startup:', err.message);
-      }
-    }
-  } else {
-    sessionKey = store.get('sessionKey');
-  }
+  const sessionKey = getStoredSessionKey(' on startup');
 
   if (sessionKey) {
     await setSessionCookie(sessionKey);
