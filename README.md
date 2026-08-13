@@ -18,6 +18,7 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 🔒 **Secure** — Encrypted credential storage  
 📍 **Always on Top** — User-controlled, stays visible across all workspaces  
 💾 **System Tray** — Minimizes to tray for easy access  
+🪟 **Taskbar Icons (Windows)** — Session and weekly usage each get their own taskbar icon, showing the live percentage (off by default — opt in via Settings)  
 ⚙️ **Settings Panel** — Persistent preferences for startup, theme, tray, thresholds, and date/time formats  
 🔔 **Usage Alerts** — Desktop notifications when usage crosses configurable warn/danger thresholds  
 🔔 **Update Notifications** — Automatic check for new releases on startup  
@@ -41,7 +42,9 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 ### Settings Options
 
 - ⚙️ **Launch at startup** — Auto-start with Windows or macOS login
-- 📌 **Hide from taskbar** — Tray-only mode
+- 📌 **Hide from taskbar** — Tray-only mode (requires tray stats)
+- 💾 **Show tray stats** — Dual system tray icons with live session/weekly percentages (Windows)
+- 🪟 **Show taskbar stats** — Session and weekly usage on separate taskbar icons (Windows, off by default)
 - 🎨 **Theme selector** — Dark / Light / System
 - ⚠️ **Warning thresholds** — Configurable amber and red levels for usage bars
 - 🔔 **Usage alerts** — Desktop notifications at warn/danger thresholds
@@ -156,12 +159,16 @@ npm start
 - **Drag** — Click and drag the title bar to move the widget
 - **Refresh** — Click the refresh icon to update data immediately
 - **Graph** — Click the graph icon to toggle usage history
-- **Minimize** — Click the minus icon to hide to system tray / dock
-- **Close** — Click the X to Close the app
+- **Minimize** — Click the minus icon to tuck the widget away. By default it minimizes normally (taskbar/tray icons stay visible as the way back in); with "Hide from taskbar" on, it hides fully to the system tray instead.
+- **Close** — Click the X to close the app entirely (same as Alt+F4, or "Close window" from either taskbar icon's right-click menu)
 
 ### System Tray
 
 Right-click the tray icon for: Show/Hide, Refresh, Re-login, Settings, Exit.
+
+### Taskbar Icons (Windows)
+
+Opt in via Settings → "Show taskbar stats" (off by default) for two separate taskbar buttons showing session and weekly usage as live percentages, colored by threshold the same way the tray icons and progress bars are, with an X at 99–100%. Click either to toggle the main window. Requires "Hide from taskbar" to be off, since that setting removes the taskbar presence entirely in favor of tray-only mode.
 
 ### Multi-Account Support (Advanced)
 
@@ -246,6 +253,7 @@ Special thanks to these contributors who have improved the widget:
 - [@torsten-liermann](https://github.com/torsten-liermann) - Per-model weekly limit support (Fable)
 - [@gastyg](https://github.com/gastyg) - Fable row for compact mode
 - [@irishpolyglot](https://github.com/irishpolyglot) - Fable timer-pairing bug fix
+- [@bastionecho](https://github.com/bastionecho) - Original taskbar usage icon concept and pixel-drawing implementation (PR #115)
 
 ---
 

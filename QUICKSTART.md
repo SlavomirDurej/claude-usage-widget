@@ -60,6 +60,7 @@ After logging in, the widget shows:
 - **Weekly Usage** - Your 7-day rolling limit
 - **Countdown Timers** - When each limit resets
 - **System Tray Icons** (Windows) - Two small icons showing real-time usage percentages
+- **Taskbar Icons** (Windows, opt-in) - Session and weekly usage as two separate taskbar buttons
 
 ## Daily Use
 
@@ -73,7 +74,10 @@ After logging in, the widget shows:
 
 **Minimizing:**
 - Click the minimize button (−)
-- Widget hides to tray/dock
+- Tucks the widget away — by default the taskbar icon stays visible as your way back in; enable "Hide from taskbar" in Settings to hide fully to the system tray instead
+
+**Closing:**
+- Click the X (or Alt+F4) to quit the app entirely
 
 **Settings:**
 - Click the gear icon (⚙️) to customize:
@@ -92,6 +96,16 @@ Two small icons in your system tray show usage at a glance:
 - **Red X:** Appears when usage reaches 99-100%
 
 Hover over icons to see exact percentages.
+
+## Taskbar Icons (Windows, opt-in)
+
+Off by default — turn on "Show taskbar stats" in Settings for two separate taskbar buttons instead of (or alongside) the tray icons:
+
+- **Session** — on the main window's own taskbar button
+- **Weekly** — on a second taskbar button
+- Same color thresholds and 99–100% red X as the tray icons and progress bars
+- Click either to bring the main window forward or tuck it away again
+- Requires "Hide from taskbar" to be off
 
 ## Logging Out
 
