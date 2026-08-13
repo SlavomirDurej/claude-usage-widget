@@ -1330,31 +1330,19 @@ function updateTaskbarIcon(usageData) {
 //    clear the corrupted entry and return null, which already correctly
 //    routes to the login screen elsewhere in the app.
 function getStoredSessionKey(context = '') {
-  // TEMPORARY TEST LOGGING — remove before merging this branch. Never
-  // prints the actual key value, only which branch fired and whether a
-  // (redacted) value was found, so this is safe to leave in console output.
   if (safeStorage.isEncryptionAvailable()) {
     const encrypted = store.get('sessionKey_encrypted');
-    if (!encrypted) {
-      const legacy = store.get('sessionKey') || null;
-      console.log(`[SessionKeyTest] branch=legacy-plaintext-fallback${context} found=${!!legacy}`);
-      return legacy;
-    }
+    if (!encrypted) return store.get('sessionKey') || null;
     try {
-      const decrypted = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      console.log(`[SessionKeyTest] branch=normal-decrypt-success${context}`);
-      return decrypted;
+      return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
     } catch (err) {
       console.error(`[Keychain] Failed to decrypt session key${context}, clearing corrupted entry:`, err.message);
       store.delete('sessionKey_encrypted');
-      console.log(`[SessionKeyTest] branch=corrupted-ciphertext-cleared${context} stillPresentAfterDelete=${!!store.get('sessionKey_encrypted')}`);
       return null;
     }
   }
   // Fallback: plain storage (legacy or safeStorage unavailable)
-  const plain = store.get('sessionKey') || null;
-  console.log(`[SessionKeyTest] branch=encryption-unavailable${context} found=${!!plain}`);
-  return plain;
+  return store.get('sessionKey') || null;
 }
 
 // IPC Handlers
