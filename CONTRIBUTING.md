@@ -43,9 +43,11 @@ Thank you for your interest in contributing! This guide will help you set up you
 **Features to test:**
 - Drag widget around screen
 - Refresh button updates data
-- Minimize to system tray (Windows/Linux) or Dock (macOS)
-- Right-click tray icon shows menu
+- Minimize tucks away (taskbar/tray icon stays visible as the way back in, unless "Hide from taskbar" is on)
+- Close (X, Alt+F4, or "Close window" from either taskbar icon) fully quits the app
+- Right-click tray icon shows menu, "Exit" fully quits
 - System tray usage indicators (dual icons on Windows)
+- Taskbar usage icons (Windows, opt-in — separate session/weekly taskbar buttons)
 - Progress bars animate smoothly
 - Timers count down correctly
 - Organization selector (if you have Teams + Personal)
@@ -125,6 +127,16 @@ Force specific percentages in `main.js` for testing:
 const weeklyIcon = generatePercentageIcon(99, weeklyColor); // Test Red X
 ```
 
+### Test Taskbar Icons (Windows)
+Opt-in feature (Settings → "Show taskbar stats", off by default). Session lives on the main window's own taskbar button; weekly lives on a second, invisible companion window created once at startup and kept alive for the app's lifetime — toggled via `setSkipTaskbar()`, never destroyed/recreated during normal use (destroy/recreate was found to cause a visible flash).
+
+Force specific percentages for testing via `generateSingleTaskbarIcon(percent, isSession, warnThreshold, dangerThreshold)`, same threshold-color/99%-X-glyph logic as the tray icons, just drawn full-width instead of split.
+
+Known gotchas if you're working in this area:
+- Two taskbar buttons from the same process need distinct AppUserModelIDs (`win.setAppDetails({ appId: ... })`) or Windows silently groups them into one button, regardless of the system "combine taskbar buttons" setting.
+- `(-32000, -32000)` is not just "a large negative coordinate" — it's the literal sentinel value Windows writes into `WINDOWPLACEMENT` to mean "this window is minimized." Positioning a window there yourself before minimizing it collides with that internal state and produces a restore/minimize flicker loop. Don't use it for off-screen placement; a same-size-as-main window with `show:false`-then-`.minimize()` (never `.show()`) is invisible on its own merits.
+- If Windows taskbar icons look stuck, wrong-sized, or a test window won't behave, a stale Explorer process from a prior bad state is a common cause — Task Manager → Windows Explorer → Restart before concluding it's a code bug.
+
 ### Mock API Response
 For testing UI without live API calls, add to `fetchUsageData()` in `app.js`:
 ```javascript
@@ -187,6 +199,8 @@ app.whenReady().then(() => {
 - [ ] Login flow works
 - [ ] Data refreshes correctly
 - [ ] Tray icons display properly
+- [ ] Taskbar icons display properly (Windows, if enabled)
+- [ ] Close (X/Alt+F4) fully quits; minimize keeps a tray/taskbar icon as the way back in
 - [ ] Settings persist across restarts
 - [ ] Logout clears session
 - [ ] Auto-update check works
@@ -237,6 +251,12 @@ Session expired. Test re-login flow from tray menu.
 - Check `updateTrayIcons()` is called after data fetch
 - Verify `generatePercentageIcon()` returns valid NativeImage
 - Windows: Icon cache may need refresh (restart Explorer)
+
+### Taskbar Icons Not Updating (Windows)
+- Check `updateTaskbarIcon()` is called after data fetch
+- Verify `generateSingleTaskbarIcon()` returns valid NativeImage
+- Confirm "Show taskbar stats" is on and "Hide from taskbar" is off in Settings
+- If icons look visually stuck or wrong-sized rather than just stale, restart Explorer before assuming it's a code issue
 
 ## Submitting Contributions
 
