@@ -1856,6 +1856,46 @@ function isNewerPreRelease(remote, local) {
   } catch { return false; }
 }
 
+// TEMPORARY TEST MOCK — remove before merging this branch. Set
+// MOCK_RATE_LIMIT_TEST=1 to shadow fetchMultipleViaWindow with this mock
+// inside the retry loop below, exercising the real retry/backoff/
+// classification logic without needing a real 429 from Claude's edge.
+// MOCK_RATE_LIMIT_SCENARIO selects which case to simulate:
+//   'recover' (default) — RateLimited on calls 1-2, succeeds on call 3.
+//     Proves retry+backoff actually recovers and returns real data.
+//   'exhaust' — RateLimited on every call (all 4 attempts fail). Proves the
+//     "exhausted retries" path keeps the session intact and propagates a
+//     RateLimited error rather than treating it as SessionExpired.
+//   'block' — CloudflareBlocked on the first call. Proves session-bound
+//     errors are NOT retried at all — single attempt, immediate session
+//     clear + SessionExpired.
+let __mockRateLimitCallCount = 0;
+async function mockFetchMultipleViaWindow(urls) {
+  __mockRateLimitCallCount++;
+  const scenario = process.env.MOCK_RATE_LIMIT_SCENARIO || 'recover';
+  console.log(`[RateLimitTest] mockFetchMultipleViaWindow call #${__mockRateLimitCallCount}, scenario=${scenario}`);
+
+  if (scenario === 'block') {
+    throw new Error('CloudflareBlocked: mock block page (should never retry)');
+  }
+  if (scenario === 'exhaust') {
+    throw new Error('RateLimited: mock 429 (always fails, should exhaust retries)');
+  }
+  // 'recover': fail the first 2 calls, succeed from the 3rd call onward.
+  if (__mockRateLimitCallCount <= 2) {
+    throw new Error('RateLimited: mock 429 (temporary, should recover)');
+  }
+  return urls.map((url, i) => {
+    if (i === 0) {
+      return {
+        five_hour: { utilization: 42, resets_at: new Date(Date.now() + 3600000).toISOString() },
+        seven_day: { utilization: 10, resets_at: new Date(Date.now() + 86400000).toISOString() },
+      };
+    }
+    return {}; // overage/prepaid placeholders, only used if shouldFetchExtended
+  });
+}
+
 ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Use the same credential retrieval logic as get-credentials
   const sessionKey = getStoredSessionKey();
@@ -1911,7 +1951,9 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   let attempt = 0;
   while (attempt <= MAX_RETRIES) {
     try {
-      const results = await fetchMultipleViaWindow(urls);
+      const results = process.env.MOCK_RATE_LIMIT_TEST === '1'
+        ? await mockFetchMultipleViaWindow(urls)
+        : await fetchMultipleViaWindow(urls);
 
       // Always have usage result (first in array)
       usageResult = { status: 'fulfilled', value: results[0] };
