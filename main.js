@@ -4,6 +4,7 @@ const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
 const { normalizeUsageLimits } = require('./src/normalize-usage-limits');
+const { validateSkin } = require('./src/skin-validator');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
@@ -1152,7 +1153,9 @@ ipcMain.handle('get-settings', () => {
     graphVisible: store.get('settings.graphVisible', false),
     expandedOpen: store.get('settings.expandedOpen', false),
     compactSpendOpen: store.get('settings.compactSpendOpen', false),
-    showTrayStats: store.get('settings.showTrayStats', false)
+    showTrayStats: store.get('settings.showTrayStats', false),
+    skin: store.get('settings.skin', 'none'),
+    glassLevel: store.get('settings.glassLevel', 'medium')
   };
 });
 
@@ -1179,6 +1182,8 @@ ipcMain.handle('save-settings', (event, settings) => {
     store.set('settings.compactSpendOpen', settings.compactSpendOpen);
   }
   store.set('settings.showTrayStats', settings.showTrayStats);
+  store.set('settings.skin', settings.skin || 'none');
+  store.set('settings.glassLevel', settings.glassLevel || 'medium');
 
   const isPortable = process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_FILE;
 
@@ -1217,6 +1222,80 @@ ipcMain.handle('save-settings', (event, settings) => {
   }
 
   return true;
+});
+
+// Custom skins — user-imported (pasted or AI-generated) token-only skins.
+// Always re-validated here on read, not just on import, so a hand-edited
+// config.json can't smuggle in something the validator would have rejected.
+ipcMain.handle('get-custom-skins', () => {
+  const stored = store.get('customSkins', []);
+  return stored.filter(s => validateSkin(s, { context: 'custom' }).valid);
+});
+
+// Built-in preset ids, read once from the source-of-truth JSON files (not
+// the renderer bundle) so a custom skin can never shadow a built-in — see
+// src/renderer/skins/presets/*.json.
+const BUILTIN_SKIN_IDS = new Set(
+  fs.readdirSync(path.join(__dirname, 'src', 'renderer', 'skins', 'presets'))
+    .filter(f => f.endsWith('.json') && f !== 'presets.generated.js')
+    .map(f => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(__dirname, 'src', 'renderer', 'skins', 'presets', f), 'utf-8')).id;
+      } catch (e) {
+        return null;
+      }
+    })
+    .filter(Boolean)
+);
+BUILTIN_SKIN_IDS.add('none');
+
+const MAX_IMPORT_SKIN_JSON_LENGTH = 50 * 1024;
+
+ipcMain.handle('import-custom-skin', (event, rawSkin) => {
+  let skin = rawSkin;
+  if (typeof rawSkin === 'string') {
+    if (rawSkin.length > MAX_IMPORT_SKIN_JSON_LENGTH) {
+      return { success: false, error: 'Skin JSON is too large' };
+    }
+    try {
+      skin = JSON.parse(rawSkin);
+    } catch (e) {
+      return { success: false, error: 'Not valid JSON: ' + e.message };
+    }
+  }
+
+  const result = validateSkin(skin, { context: 'custom' });
+  if (!result.valid) {
+    return { success: false, error: result.errors.join('; ') };
+  }
+
+  if (BUILTIN_SKIN_IDS.has(skin.id)) {
+    return { success: false, error: `"${skin.id}" is a built-in skin id and can't be reused for a custom skin` };
+  }
+
+  // Strip to exactly the allowed shape — never persist extra fields even if
+  // the validator's allow-list is ever loosened later.
+  const clean = {
+    id: skin.id,
+    name: skin.name,
+    tokens: { ...skin.tokens },
+  };
+  if (skin.author) clean.author = skin.author;
+  if (skin.description) clean.description = skin.description;
+
+  const existing = store.get('customSkins', []);
+  if (existing.some(s => s.id === clean.id)) {
+    return { success: false, error: `A custom skin with id "${clean.id}" already exists` };
+  }
+  store.set('customSkins', [...existing, clean]);
+  return { success: true, skin: clean };
+});
+
+ipcMain.handle('delete-custom-skin', (event, id) => {
+  if (typeof id !== 'string' || !id) return { success: false };
+  const existing = store.get('customSkins', []);
+  store.set('customSkins', existing.filter(s => s.id !== id));
+  return { success: true };
 });
 
 // Open a visible BrowserWindow for the user to log in to Claude.ai.

@@ -14,10 +14,27 @@
     ">
     <title>Claude Usage Widget</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="skins/liquid.css">
+    <!-- Additional built-in preset "advanced" CSS files (beyond flat tokens)
+         get their own <link> here as they're added, same pattern as liquid.css. -->
     <script src="../../node_modules/chart.js/dist/chart.umd.js"></script>
 </head>
 
 <body>
+    <!-- Liquid skin SVG filters (hidden, referenced by CSS) -->
+    <svg id="skin-filters" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;">
+        <defs>
+            <filter id="glass-distort" x="-10%" y="-10%" width="120%" height="120%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.012 0.018" numOctaves="2" result="noise"/>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="10" xChannelSelector="R" yChannelSelector="G"/>
+            </filter>
+        </defs>
+    </svg>
+
+    <!-- Skin background: blob layer sits here; widget glass layers are CSS pseudo-elements -->
+    <div id="skin-bg" aria-hidden="true">
+        <div id="skin-blobs"></div>
+    </div>
     <div id="app">
         <div class="widget-container" id="widgetContainer">
             <!-- Title Bar -->
@@ -377,6 +394,28 @@
                             </div>
                         </div>
 
+                        <!-- Row 7: featured skins — populated dynamically by SkinManager
+                             (None + Liquid + one more, plus the active skin if it isn't
+                             already among those). "Browse all…" opens the full gallery,
+                             the rest of the presets, custom import, and the AI prompt in
+                             a popup so this row doesn't have to list all 10+ skins.
+                             See skins/CREATING_A_SKIN.md for the token format. -->
+                        <div class="settings-row-full">
+                            <span class="settings-row-label">Skin</span>
+                            <div class="skin-selector" id="skinSelector"></div>
+                            <button class="skin-browse-all-btn" id="skinBrowseAllBtn" type="button">Browse all skins…</button>
+                        </div>
+
+                        <!-- Row 8: glass transparency (Liquid skin only) -->
+                        <div class="settings-row-full" id="glassLevelRow" style="display:none;">
+                            <span class="settings-row-label">Transparency</span>
+                            <select id="glassLevel" class="settings-select">
+                                <option value="clear">Clear</option>
+                                <option value="medium">Medium</option>
+                                <option value="frost">Frosted</option>
+                            </select>
+                        </div>
+
                     </div>
 
                     <div class="settings-footer">
@@ -416,9 +455,46 @@
                 </div>
             </div>
 
+            <!-- Skin gallery popup: every preset + custom skin, the custom-skin
+                 import form, and the "copy an AI prompt" action. Opened from the
+                 "Browse all skins…" button in Settings; purely an in-DOM overlay,
+                 so it never triggers a window resize. Closed via the Done button,
+                 Escape, or a click on the dimmed backdrop. -->
+            <div class="skin-popup-overlay" id="skinPopupOverlay" style="display: none;">
+                <div class="skin-popup">
+                    <div class="settings-header">
+                        <span class="settings-title">All skins</span>
+                        <button class="done-settings-btn" id="skinPopupCloseBtn" title="Done">Done</button>
+                    </div>
+                    <div class="skin-popup-body">
+                        <div class="skin-selector skin-selector-full" id="skinSelectorFull"></div>
+
+                        <div class="skin-popup-section">
+                            <span class="settings-row-label">Custom skin</span>
+                            <div class="skin-import">
+                                <div class="skin-import-controls">
+                                    <button class="skin-import-toggle-btn" id="skinImportToggleBtn" type="button">Import…</button>
+                                    <button class="skin-import-toggle-btn" id="skinCopyPromptBtn" type="button">Copy AI prompt</button>
+                                </div>
+                                <div class="skin-import-form" id="skinImportForm" style="display:none;">
+                                    <textarea id="skinImportInput" class="skin-import-textarea" rows="4" maxlength="51200" placeholder='Paste a skin.json here (see skins/CREATING_A_SKIN.md)'></textarea>
+                                    <div class="skin-import-actions">
+                                        <button class="skin-import-submit-btn" id="skinImportSubmitBtn" type="button">Add skin</button>
+                                        <button class="skin-import-cancel-btn" id="skinImportCancelBtn" type="button">Cancel</button>
+                                    </div>
+                                    <p class="skin-import-error" id="skinImportError"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
+    <script src="skins/presets/presets.generated.js"></script>
+    <script src="skins/skin-manager.js"></script>
     <script src="app.js"></script>
 </body>
 

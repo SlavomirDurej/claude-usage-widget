@@ -71,5 +71,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body }),
 
   // Compact mode
-  setCompactMode: (compact) => ipcRenderer.send('set-compact-mode', compact)
+  setCompactMode: (compact) => ipcRenderer.send('set-compact-mode', compact),
+
+  // Custom skins
+  getCustomSkins: () => ipcRenderer.invoke('get-custom-skins'),
+  importCustomSkin: (skin) => ipcRenderer.invoke('import-custom-skin', skin),
+  deleteCustomSkin: (id) => ipcRenderer.invoke('delete-custom-skin', id)
 });
