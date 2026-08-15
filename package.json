@@ -4,12 +4,19 @@
   "description": "Desktop widget for Claude.ai usage monitoring",
   "main": "main.js",
   "scripts": {
+    "prestart": "npm run validate-skins",
     "start": "electron .",
+    "prebuild": "npm run validate-skins",
     "build": "electron-builder",
+    "prebuild:win": "npm run validate-skins",
     "build:win": "electron-builder --win",
+    "predev": "npm run validate-skins",
     "dev": "cross-env NODE_ENV=development electron .",
+    "prebuild:mac": "npm run validate-skins",
     "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux"
+    "prebuild:linux": "npm run validate-skins",
+    "build:linux": "electron-builder --linux",
+    "validate-skins": "node scripts/validate-skins.js"
   },
   "keywords": [
     "claude",

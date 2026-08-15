@@ -1,0 +1,24 @@
+{
+  "id": "cyberpunk-neon",
+  "name": "Cyberpunk Neon",
+  "author": "Hebbala LLC",
+  "description": "Hot pink on near-black with a neon-cyan edge.",
+  "tokens": {
+    "--skin-bg": "linear-gradient(135deg, #0c0416 0%, #170826 100%)",
+    "--skin-bg-elevated": "rgba(0, 0, 0, 0.4)",
+    "--skin-border": "rgba(255, 60, 172, 0.3)",
+    "--skin-border-hover": "rgba(0, 240, 255, 0.5)",
+    "--skin-hairline": "rgba(255, 60, 172, 0.18)",
+    "--skin-radius": "6px",
+    "--skin-text": "#f5e9ff",
+    "--skin-text-dim": "#c79fe0",
+    "--skin-text-faint": "#8a63a3",
+    "--skin-accent": "#ff3cac",
+    "--skin-accent-bg": "rgba(255, 60, 172, 0.2)",
+    "--skin-accent-border": "rgba(255, 60, 172, 0.55)",
+    "--skin-accent-text": "#00f0ff",
+    "--skin-fill": "rgba(255, 60, 172, 0.08)",
+    "--skin-fill-hover": "rgba(0, 240, 255, 0.12)",
+    "--skin-track": "rgba(255, 60, 172, 0.14)"
+  }
+}

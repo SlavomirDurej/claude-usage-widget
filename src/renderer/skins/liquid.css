@@ -1,0 +1,584 @@
+/* ============================================================================
+   LIQUID GLASS SKIN — v3
+   ----------------------------------------------------------------------------
+   A self-contained "Liquid Glass" material, tuned for an Electron widget on a
+   transparent, frameless window.
+
+   WHY SELF-CONTAINED (not desktop refraction):
+   On Windows, `backdrop-filter` on a `transparent:true` Electron window cannot
+   blur the OS desktop behind it — it only blurs in-document content. So instead
+   of faking a broken see-through, we build the light *inside* the glass: a soft,
+   slow, brand-tinted aurora sits behind a frosted veil, finished with a real
+   specular rim. The result looks identical on any wallpaper, focused or not.
+
+   LAYER MODEL (all clipped to the rounded container, so corners are never sharp):
+     .widget-container            → the glass slab: deep base + rim + depth shadow
+     .widget-container::before    → aurora (the light within the glass), drifts slowly
+     .widget-container::after     → frost veil + top specular sheen
+     content (z-index:1)          → printed on the glass, high-contrast
+     .settings-overlay (z-index:30) → its own matching glass slab
+
+   Everything is driven by the --lg-* custom properties below, so the dark and
+   light themes share one set of structural rules and only swap the palette.
+
+   RELATIONSHIP TO THE STANDARDIZED --skin-* CONTRACT (see presets/liquid.json
+   and skins/CREATING_A_SKIN.md): Liquid is registered like any other preset,
+   with a `tokens` block mapping its palette onto the shared --skin-* names —
+   the skin registry applies those to <body> for every skin, built-in or
+   custom, so base (non-glass) chrome still resolves sensibly. This file's own
+   --lg-* selectors are higher-specificity and win for anything Liquid
+   explicitly restyles (the aurora, frost veil, rim); --lg-* stays a separate,
+   literal palette here rather than `var(--skin-*, ...)` indirection so this
+   already-tuned effect layer doesn't shift if the shared contract's defaults
+   ever change.
+   ========================================================================== */
+
+/* ── Palette: DARK (default) ─────────────────────────────────────────────── */
+body[data-skin="liquid"] {
+  /* translucent tint — the window is transparent, so this is how much real
+     desktop shows through (the see-through "glass"). Tunable via [data-glass]. */
+  --lg-scene-base: radial-gradient(140% 120% at 50% -10%, rgba(26, 22, 50, 0.52) 0%, rgba(13, 11, 24, 0.62) 100%);
+
+  /* the aurora — soft, desaturated, brand-leaning; reads as light, not neon */
+  --lg-aurora:
+    radial-gradient(38% 50% at 22% 28%, rgba(139, 110, 246, 0.50) 0%, transparent 62%),
+    radial-gradient(42% 46% at 82% 70%, rgba(56, 122, 235, 0.42) 0%, transparent 64%),
+    radial-gradient(36% 40% at 62% 14%, rgba(60, 200, 200, 0.22) 0%, transparent 60%),
+    radial-gradient(46% 44% at 14% 88%, rgba(240, 132, 96, 0.18) 0%, transparent 62%);
+
+  /* corner sheen + a light darkening for text legibility — kept thin so the
+     desktop still reads through it */
+  --lg-veil:
+    radial-gradient(120% 80% at 12% 0%, rgba(255, 255, 255, 0.12) 0%, transparent 46%),
+    radial-gradient(130% 110% at 50% 0%, rgba(14, 12, 26, 0.04) 0%, rgba(8, 6, 16, 0.22) 100%);
+
+  --lg-text:        rgba(247, 245, 255, 0.96);
+  --lg-text-dim:    rgba(223, 220, 240, 0.64);
+  --lg-text-faint:  rgba(205, 200, 232, 0.40);
+
+  --lg-accent:        #c9b8ff;            /* readable violet on dark glass */
+  --lg-accent-bg:     rgba(139, 92, 246, 0.24);
+  --lg-accent-border: rgba(159, 122, 255, 0.55);
+  --lg-accent-glow:   rgba(139, 92, 246, 0.45);
+
+  --lg-fill:         rgba(255, 255, 255, 0.07);   /* glass control surface */
+  --lg-fill-hover:   rgba(255, 255, 255, 0.14);
+  --lg-border:       rgba(255, 255, 255, 0.14);
+  --lg-border-hover: rgba(255, 255, 255, 0.30);
+
+  --lg-hairline:     rgba(255, 255, 255, 0.08);
+  --lg-track:        rgba(255, 255, 255, 0.10);
+
+  /* the specular rim that sells the glass (soft, not a hard frame) */
+  --lg-rim:        rgba(255, 255, 255, 0.50);     /* bright top sheen */
+  --lg-rim-faint:  rgba(255, 255, 255, 0.10);     /* full edge */
+  --lg-glow-top:   rgba(255, 255, 255, 0.10);
+  --lg-depth:      rgba(0, 0, 0, 0.50);           /* inner bottom shadow */
+}
+
+/* ── Palette: LIGHT ──────────────────────────────────────────────────────── */
+body[data-skin="liquid"].theme-light {
+  --lg-scene-base: radial-gradient(140% 120% at 50% -10%, rgba(252, 252, 255, 0.52) 0%, rgba(238, 240, 250, 0.62) 100%);
+
+  --lg-aurora:
+    radial-gradient(40% 52% at 20% 26%, rgba(139, 92, 246, 0.22) 0%, transparent 62%),
+    radial-gradient(44% 48% at 84% 72%, rgba(56, 128, 235, 0.18) 0%, transparent 64%),
+    radial-gradient(38% 42% at 60% 12%, rgba(45, 200, 190, 0.13) 0%, transparent 60%),
+    radial-gradient(46% 46% at 12% 90%, rgba(255, 150, 110, 0.14) 0%, transparent 62%);
+
+  --lg-veil:
+    radial-gradient(120% 80% at 12% 0%, rgba(255, 255, 255, 0.55) 0%, transparent 50%),
+    radial-gradient(130% 110% at 50% 0%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.30) 100%);
+
+  --lg-text:        #1b1830;
+  --lg-text-dim:    #4a4665;
+  --lg-text-faint:  #757090;
+
+  --lg-accent:        #7c3aed;
+  --lg-accent-bg:     rgba(139, 92, 246, 0.14);
+  --lg-accent-border: rgba(124, 58, 237, 0.42);
+  --lg-accent-glow:   rgba(139, 92, 246, 0.30);
+
+  --lg-fill:         rgba(255, 255, 255, 0.45);
+  --lg-fill-hover:   rgba(255, 255, 255, 0.70);
+  --lg-border:       rgba(120, 110, 160, 0.22);
+  --lg-border-hover: rgba(120, 110, 160, 0.40);
+
+  --lg-hairline:     rgba(40, 32, 70, 0.10);
+  --lg-track:        rgba(40, 32, 70, 0.10);
+
+  --lg-rim:        rgba(255, 255, 255, 0.95);
+  --lg-rim-faint:  rgba(255, 255, 255, 0.55);
+  --lg-glow-top:   rgba(255, 255, 255, 0.55);
+  --lg-depth:      rgba(90, 78, 130, 0.16);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   GLASS TRANSPARENCY LEVELS
+   The window is transparent, so --lg-scene-base controls how much real desktop
+   shows through. Default (no attribute) is a balanced "medium"; an optional
+   data-glass attribute on <body> dials it clearer or more frosted.
+   ════════════════════════════════════════════════════════════════════════ */
+body[data-skin="liquid"][data-glass="clear"] {
+  --lg-scene-base: radial-gradient(140% 120% at 50% -10%, rgba(26, 22, 50, 0.30) 0%, rgba(13, 11, 24, 0.40) 100%);
+}
+body[data-skin="liquid"].theme-light[data-glass="clear"] {
+  --lg-scene-base: radial-gradient(140% 120% at 50% -10%, rgba(252, 252, 255, 0.28) 0%, rgba(238, 240, 250, 0.38) 100%);
+}
+body[data-skin="liquid"][data-glass="frost"] {
+  --lg-scene-base: radial-gradient(140% 120% at 50% -10%, rgba(24, 20, 46, 0.80) 0%, rgba(12, 10, 22, 0.86) 100%);
+}
+body[data-skin="liquid"].theme-light[data-glass="frost"] {
+  --lg-scene-base: radial-gradient(140% 120% at 50% -10%, rgba(252, 252, 255, 0.82) 0%, rgba(238, 240, 250, 0.88) 100%);
+}
+
+/* ── Root: keep the page transparent so the desktop shows through ─────────── */
+body[data-skin="liquid"] {
+  background: transparent !important;
+}
+
+/* The old full-viewport blob layer caused hard rectangular corners — kill it.
+   The scene now lives *inside* the rounded container as pseudo-elements. */
+body[data-skin="liquid"] #skin-bg {
+  display: none !important;
+}
+
+/* ── The glass slab ──────────────────────────────────────────────────────── */
+body[data-skin="liquid"] #app {
+  position: relative;
+  z-index: 1;
+  padding: 0;
+}
+
+body[data-skin="liquid"] .widget-container {
+  position: relative !important;
+  background: var(--lg-scene-base) !important;
+  border: none !important;
+  border-radius: 22px !important;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 1px var(--lg-rim),                 /* bright top sheen, follows the curve */
+    inset 0 0 0 1px var(--lg-rim-faint),           /* faint full rim */
+    inset 0 18px 30px -20px var(--lg-glow-top),    /* soft inner top glow */
+    inset 0 -30px 50px -28px var(--lg-depth) !important;  /* inner bottom depth = thickness */
+}
+
+/* Aurora — the light within the glass. Drifts slowly; transform-only (cheap). */
+body[data-skin="liquid"] .widget-container::before {
+  content: '';
+  position: absolute;
+  inset: -25%;
+  background: var(--lg-aurora);
+  z-index: 0;
+  pointer-events: none;
+  will-change: transform;
+  animation: lg-drift 34s ease-in-out infinite alternate;
+}
+
+/* Frost veil + corner sheen — painted over the aurora to make it milky glass */
+body[data-skin="liquid"] .widget-container::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--lg-veil);
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* All real content rides above the two glass layers */
+body[data-skin="liquid"] .widget-container > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ...except the settings overlays, which must stay as covering layers.
+   The rule above would otherwise knock them into normal flow, so the main
+   widget would show *above* the panel instead of being covered by it. */
+body[data-skin="liquid"] .settings-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+}
+
+/* Skin popup sits above .settings-overlay (z-index 30) — same reassertion,
+   needed because body[data-skin="liquid"] .widget-container > * forces
+   position:relative on every direct child, this overlay included. */
+body[data-skin="liquid"] .skin-popup-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 40 !important;
+}
+
+@keyframes lg-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(2.5%, -2%, 0) scale(1.06); }
+  100% { transform: translate3d(-2%, 2.5%, 0) scale(1.03); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-skin="liquid"] .widget-container::before { animation: none; }
+}
+
+/* ── Title bar ───────────────────────────────────────────────────────────── */
+body[data-skin="liquid"] .title-bar {
+  background: transparent !important;
+  border-bottom: 1px solid var(--lg-hairline) !important;
+  box-shadow: 0 1px 0 var(--lg-rim-faint);
+}
+
+body[data-skin="liquid"] .title {
+  color: var(--lg-text);
+}
+body[data-skin="liquid"]:not(.theme-light) .title {
+  text-shadow: 0 0 16px rgba(180, 150, 255, 0.25);
+}
+body[data-skin="liquid"] .app-logo { opacity: 0.95; }
+
+/* ── Control buttons — glass pills ───────────────────────────────────────── */
+body[data-skin="liquid"] .control-btn {
+  background: var(--lg-fill);
+  border: 1px solid var(--lg-border);
+  color: var(--lg-text-dim);
+  box-shadow: inset 0 1px 0 var(--lg-rim-faint);
+  transition: all 0.18s ease;
+}
+body[data-skin="liquid"] .control-btn:hover {
+  background: var(--lg-fill-hover);
+  border-color: var(--lg-border-hover);
+  color: var(--lg-text);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 var(--lg-rim),
+    0 4px 14px var(--lg-accent-glow);
+}
+body[data-skin="liquid"] .close-btn:hover {
+  background: rgba(231, 76, 60, 0.92) !important;
+  border-color: rgba(231, 76, 60, 0.9);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(231, 76, 60, 0.45);
+}
+
+/* ── States shown before the main content (readable on glass) ────────────── */
+body[data-skin="liquid"] .loading-container,
+body[data-skin="liquid"] .loading-container p { color: var(--lg-text-dim); }
+body[data-skin="liquid"] .spinner {
+  border-color: var(--lg-track);
+  border-top-color: var(--lg-accent);
+}
+body[data-skin="liquid"] .step-text h3,
+body[data-skin="liquid"] .session-key-header h3,
+body[data-skin="liquid"] .no-usage-content h3 { color: var(--lg-text); }
+body[data-skin="liquid"] .step-text p,
+body[data-skin="liquid"] .session-key-header p,
+body[data-skin="liquid"] .no-usage-content p { color: var(--lg-text-dim); }
+body[data-skin="liquid"] .step-icon svg,
+body[data-skin="liquid"] .no-usage-content svg { color: var(--lg-accent); }
+
+/* ── Column headers + labels ─────────────────────────────────────────────── */
+body[data-skin="liquid"] .col-header        { color: var(--lg-text-faint); }
+body[data-skin="liquid"] .usage-label       { color: var(--lg-text-dim); }
+body[data-skin="liquid"] .usage-percentage,
+body[data-skin="liquid"] .timer-text        { color: var(--lg-text); }
+body[data-skin="liquid"] .resets-at-text    { color: var(--lg-text-faint); }
+
+/* ── Progress bars — keep semantic colours, add a glassy gloss ───────────── */
+body[data-skin="liquid"] .progress-bar {
+  background: var(--lg-track);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+/* gloss line on the fill (no hue change — danger/warning stay meaningful) */
+body[data-skin="liquid"] .progress-fill {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.18);
+}
+body[data-skin="liquid"] .progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 50% 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* ── Timer rings — keep semantic stroke, add a soft glow ─────────────────── */
+body[data-skin="liquid"] .timer-bg { stroke: var(--lg-track); }
+body[data-skin="liquid"] .timer-progress {
+  filter: drop-shadow(0 0 3px var(--lg-accent-glow));
+}
+
+/* ── Expand / sections ───────────────────────────────────────────────────── */
+body[data-skin="liquid"] .expand-arrow { color: var(--lg-text-faint); }
+body[data-skin="liquid"] .expand-toggle:hover .expand-arrow { color: var(--lg-accent); }
+body[data-skin="liquid"] .expand-section,
+body[data-skin="liquid"] .graph-section,
+body[data-skin="liquid"] #multiAccountSection {
+  border-top: 1px solid var(--lg-hairline) !important;
+}
+body[data-skin="liquid"] .expand-section .usage-label { color: var(--lg-text-faint); }
+
+/* extra-usage status pill keeps its on/off semantics */
+body[data-skin="liquid"] .active-account-name {
+  color: var(--lg-accent);
+}
+body[data-skin="liquid"]:not(.theme-light) .active-account-name {
+  text-shadow: 0 0 10px var(--lg-accent-glow);
+}
+body[data-skin="liquid"] .all-accounts-btn.active { color: #6db1ff; }
+
+/* ── Multi-account section ───────────────────────────────────────────────── */
+body[data-skin="liquid"] .multi-account-label     { color: var(--lg-text-dim); }
+body[data-skin="liquid"] .multi-account-row-label { color: var(--lg-text-faint); }
+body[data-skin="liquid"] .multi-account-pct       { color: var(--lg-text); }
+body[data-skin="liquid"] .multi-account-time      { color: var(--lg-text-faint); }
+body[data-skin="liquid"] .multi-account-bar-bg    { background: var(--lg-track); }
+
+/* ── Compact mode ────────────────────────────────────────────────────────── */
+body[data-skin="liquid"] .compact-label { color: var(--lg-text-dim); }
+body[data-skin="liquid"] .compact-pct   { color: var(--lg-text); }
+body[data-skin="liquid"] .compact-bar-bg {
+  background: var(--lg-track);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+body[data-skin="liquid"] .compact-bar-fill {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+body[data-skin="liquid"] .compact-collapse-btn,
+body[data-skin="liquid"] .compact-expand-btn { color: var(--lg-text-faint); }
+body[data-skin="liquid"] .compact-collapse-btn:hover,
+body[data-skin="liquid"] .compact-expand-btn:hover { color: var(--lg-accent); }
+
+/* ── Update banner ───────────────────────────────────────────────────────── */
+body[data-skin="liquid"] .update-banner {
+  background: var(--lg-accent-bg) !important;
+  border-bottom: 1px solid var(--lg-accent-border);
+}
+body[data-skin="liquid"] .update-banner-text,
+body[data-skin="liquid"] .update-banner-dismiss { color: var(--lg-accent); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   SETTINGS — rebuilt as its own matching glass slab (was the broken part)
+   ════════════════════════════════════════════════════════════════════════ */
+body[data-skin="liquid"] .settings-overlay {
+  background: var(--lg-scene-base) !important;
+  border: none !important;
+  border-radius: 22px !important;
+  overflow: hidden;
+  z-index: 30 !important;
+  box-shadow:
+    inset 0 1px 1px var(--lg-rim),
+    inset 0 0 0 1px var(--lg-rim-faint),
+    inset 0 18px 30px -20px var(--lg-glow-top),
+    inset 0 -30px 50px -28px var(--lg-depth) !important;
+  /* no backdrop-filter: the overlay fully covers the widget, so there is
+     nothing meaningful behind it to blur — blurring only muddied it before */
+}
+body[data-skin="liquid"] .settings-overlay::before {
+  content: '';
+  position: absolute;
+  inset: -25%;
+  background: var(--lg-aurora);
+  z-index: 0;
+  pointer-events: none;
+  will-change: transform;
+  animation: lg-drift 40s ease-in-out infinite alternate;
+}
+body[data-skin="liquid"] .settings-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--lg-veil);
+  z-index: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-skin="liquid"] .settings-overlay::before { animation: none; }
+}
+body[data-skin="liquid"] .settings-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* header */
+body[data-skin="liquid"] .settings-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--lg-hairline) !important;
+  box-shadow: 0 1px 0 var(--lg-rim-faint);
+}
+body[data-skin="liquid"] .settings-title { color: var(--lg-text); }
+body[data-skin="liquid"] .done-settings-btn {
+  background: var(--lg-accent-bg);
+  border: 1px solid var(--lg-accent-border);
+  color: var(--lg-accent);
+  box-shadow: inset 0 1px 0 var(--lg-rim-faint);
+}
+body[data-skin="liquid"] .done-settings-btn:hover {
+  background: var(--lg-accent-bg);
+  border-color: var(--lg-accent-border);
+  color: var(--lg-text);
+  box-shadow: inset 0 1px 0 var(--lg-rim), 0 3px 12px var(--lg-accent-glow);
+}
+
+body[data-skin="liquid"] .settings-disclaimer {
+  color: var(--lg-text-faint);
+  border-bottom: 1px solid var(--lg-hairline) !important;
+}
+
+/* labels + hints */
+body[data-skin="liquid"] .settings-row-label { color: var(--lg-text-dim); }
+body[data-skin="liquid"] .settings-row-hint  { color: var(--lg-text-faint); }
+body[data-skin="liquid"] .settings-col-disabled .settings-row-label { color: var(--lg-text-faint); }
+body[data-skin="liquid"] .settings-row-full  { border-bottom: 1px solid var(--lg-hairline); }
+body[data-skin="liquid"] .threshold-pct { color: var(--lg-text-faint); }
+
+/* toggle switches */
+body[data-skin="liquid"] .toggle-slider {
+  background: var(--lg-track);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+body[data-skin="liquid"] .toggle-slider::before {
+  background: var(--lg-text-dim);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+body[data-skin="liquid"] input:checked + .toggle-slider {
+  background: var(--lg-accent-bg);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.15),
+    0 0 10px var(--lg-accent-glow);
+}
+body[data-skin="liquid"] input:checked + .toggle-slider::before {
+  background: var(--lg-accent);
+}
+
+/* segmented buttons: theme + skin */
+body[data-skin="liquid"] .theme-btn,
+body[data-skin="liquid"] .skin-btn {
+  background: var(--lg-fill);
+  border: 1px solid var(--lg-border);
+  color: var(--lg-text-dim);
+  box-shadow: inset 0 1px 0 var(--lg-rim-faint);
+}
+body[data-skin="liquid"] .theme-btn:hover,
+body[data-skin="liquid"] .skin-btn:hover {
+  border-color: var(--lg-border-hover);
+  color: var(--lg-text);
+}
+body[data-skin="liquid"] .theme-btn.active,
+body[data-skin="liquid"] .skin-btn.active {
+  background: var(--lg-accent-bg);
+  border-color: var(--lg-accent-border);
+  color: var(--lg-accent);
+  box-shadow: inset 0 1px 0 var(--lg-rim), 0 0 12px var(--lg-accent-glow);
+}
+
+/* selects */
+body[data-skin="liquid"] .settings-select {
+  background: var(--lg-fill);
+  border: 1px solid var(--lg-border);
+  color: var(--lg-text);
+  box-shadow: inset 0 1px 0 var(--lg-rim-faint);
+}
+body[data-skin="liquid"] .settings-select:hover { border-color: var(--lg-border-hover); }
+body[data-skin="liquid"] .settings-select:focus {
+  border-color: var(--lg-accent-border);
+  box-shadow: 0 0 0 2px var(--lg-accent-glow);
+}
+body[data-skin="liquid"]:not(.theme-light) .settings-select option { background: #16132a; color: var(--lg-text); }
+body[data-skin="liquid"].theme-light .settings-select option { background: #ffffff; color: #1b1830; }
+
+/* threshold number inputs */
+body[data-skin="liquid"] .threshold-input {
+  background: var(--lg-fill);
+  border: 1px solid var(--lg-border);
+  color: var(--lg-text);
+  box-shadow: inset 0 1px 0 var(--lg-rim-faint);
+}
+body[data-skin="liquid"] .threshold-input:focus { border-color: var(--lg-accent-border); }
+
+/* accounts */
+body[data-skin="liquid"] .accounts-section { border-top: 1px solid var(--lg-hairline); }
+body[data-skin="liquid"] .accounts-title   { color: var(--lg-text-dim); }
+body[data-skin="liquid"] .add-account-btn {
+  background: var(--lg-accent-bg);
+  border: 1px solid var(--lg-accent-border);
+  color: var(--lg-accent);
+}
+body[data-skin="liquid"] .add-account-btn:hover { box-shadow: 0 0 10px var(--lg-accent-glow); }
+body[data-skin="liquid"] .account-item {
+  background: var(--lg-fill);
+  border: 1px solid var(--lg-border);
+  box-shadow: inset 0 1px 0 var(--lg-rim-faint);
+}
+body[data-skin="liquid"] .account-item.active {
+  background: var(--lg-accent-bg);
+  border-color: var(--lg-accent-border);
+}
+body[data-skin="liquid"] .account-dot { background: var(--lg-text-faint); }
+body[data-skin="liquid"] .account-item.active .account-dot { background: var(--lg-accent); }
+body[data-skin="liquid"] .account-label { color: var(--lg-text-dim); }
+body[data-skin="liquid"] .account-item.active .account-label { color: var(--lg-text); }
+body[data-skin="liquid"] .account-active-badge { color: var(--lg-accent); }
+body[data-skin="liquid"] .account-switch-btn {
+  background: var(--lg-fill);
+  border: 1px solid var(--lg-border);
+  color: var(--lg-text-dim);
+}
+body[data-skin="liquid"] .account-switch-btn:hover { color: var(--lg-accent); background: var(--lg-accent-bg); }
+body[data-skin="liquid"] .account-delete-btn { color: var(--lg-text-faint); }
+body[data-skin="liquid"] .account-delete-btn:hover { color: #ff6b6b; }
+body[data-skin="liquid"] .account-label-input {
+  background: var(--lg-fill);
+  border: 1px solid var(--lg-accent-border);
+  color: var(--lg-text);
+}
+body[data-skin="liquid"] .save-account-btn {
+  background: var(--lg-accent-bg);
+  border: 1px solid var(--lg-accent-border);
+  color: var(--lg-accent);
+}
+body[data-skin="liquid"] .cancel-account-btn {
+  background: var(--lg-fill);
+  border: 1px solid var(--lg-border);
+  color: var(--lg-text-dim);
+}
+
+/* footer */
+body[data-skin="liquid"] .settings-footer { border-top: 1px solid var(--lg-hairline) !important; }
+body[data-skin="liquid"] .settings-version-label { color: var(--lg-text-faint); }
+body[data-skin="liquid"] .logout-btn {
+  color: #ff7a7a;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: transparent;
+}
+body[data-skin="liquid"] .logout-btn:hover {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.7);
+}
+body[data-skin="liquid"] .coffee-btn {
+  background: rgba(245, 184, 64, 0.14);
+  color: #f6c453;
+  border: 1px solid rgba(245, 184, 64, 0.32);
+  box-shadow: inset 0 1px 0 var(--lg-rim-faint);
+}
+body[data-skin="liquid"] .coffee-btn:hover {
+  background: rgba(245, 184, 64, 0.22);
+  border-color: rgba(245, 184, 64, 0.5);
+}
+body[data-skin="liquid"].theme-light .coffee-btn { color: #b07807; }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+body[data-skin="liquid"] ::-webkit-scrollbar-thumb {
+  background: var(--lg-border);
+  border-radius: 4px;
+}
+body[data-skin="liquid"] ::-webkit-scrollbar-thumb:hover { background: var(--lg-border-hover); }
+
+/* ── Skin-picker preview swatch (in settings) ────────────────────────────── */
+.skin-preview-liquid {
+  background:
+    radial-gradient(60% 60% at 25% 25%, rgba(160, 130, 255, 0.95) 0%, transparent 70%),
+    radial-gradient(60% 60% at 80% 75%, rgba(80, 150, 245, 0.9) 0%, transparent 70%),
+    linear-gradient(135deg, #2a2150 0%, #141233 100%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}

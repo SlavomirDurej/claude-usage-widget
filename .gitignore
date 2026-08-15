@@ -51,3 +51,9 @@ developerID_application.cer
 
 # Temp commit message files
 commit_msg.txt
+
+# Generated skin bundle — regenerated from src/renderer/skins/presets/*.json
+# and CREATING_A_SKIN.md by scripts/validate-skins.js before every entry
+# point (predev/prestart/prebuild*), so it never needs to be committed and
+# would only add merge-conflict-prone diff noise if it were.
+src/renderer/skins/presets/presets.generated.js

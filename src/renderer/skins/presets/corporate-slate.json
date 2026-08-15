@@ -1,0 +1,24 @@
+{
+  "id": "corporate-slate",
+  "name": "Corporate Slate",
+  "author": "Hebbala LLC",
+  "description": "Neutral slate gray with a professional blue accent — built for white-labeling.",
+  "tokens": {
+    "--skin-bg": "linear-gradient(135deg, #232a33 0%, #2d3540 100%)",
+    "--skin-bg-elevated": "rgba(0, 0, 0, 0.25)",
+    "--skin-border": "rgba(180, 195, 210, 0.14)",
+    "--skin-border-hover": "rgba(180, 195, 210, 0.3)",
+    "--skin-hairline": "rgba(180, 195, 210, 0.09)",
+    "--skin-radius": "8px",
+    "--skin-text": "#e6ecf2",
+    "--skin-text-dim": "#a8b6c4",
+    "--skin-text-faint": "#76869a",
+    "--skin-accent": "#4f9dde",
+    "--skin-accent-bg": "rgba(79, 157, 222, 0.18)",
+    "--skin-accent-border": "rgba(79, 157, 222, 0.42)",
+    "--skin-accent-text": "#7cbaea",
+    "--skin-fill": "rgba(255, 255, 255, 0.05)",
+    "--skin-fill-hover": "rgba(255, 255, 255, 0.1)",
+    "--skin-track": "rgba(255, 255, 255, 0.09)"
+  }
+}

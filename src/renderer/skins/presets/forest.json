@@ -1,0 +1,24 @@
+{
+  "id": "forest",
+  "name": "Forest",
+  "author": "Hebbala LLC",
+  "description": "Deep earthy green with a bright leaf accent.",
+  "tokens": {
+    "--skin-bg": "linear-gradient(135deg, #10201a 0%, #16281f 100%)",
+    "--skin-bg-elevated": "rgba(0, 0, 0, 0.3)",
+    "--skin-border": "rgba(150, 210, 170, 0.12)",
+    "--skin-border-hover": "rgba(150, 210, 170, 0.28)",
+    "--skin-hairline": "rgba(150, 210, 170, 0.08)",
+    "--skin-radius": "10px",
+    "--skin-text": "#e6f2e9",
+    "--skin-text-dim": "#a9c4b2",
+    "--skin-text-faint": "#749381",
+    "--skin-accent": "#5fd88a",
+    "--skin-accent-bg": "rgba(95, 216, 138, 0.18)",
+    "--skin-accent-border": "rgba(95, 216, 138, 0.42)",
+    "--skin-accent-text": "#8fe8ac",
+    "--skin-fill": "rgba(255, 255, 255, 0.05)",
+    "--skin-fill-hover": "rgba(255, 255, 255, 0.1)",
+    "--skin-track": "rgba(255, 255, 255, 0.09)"
+  }
+}

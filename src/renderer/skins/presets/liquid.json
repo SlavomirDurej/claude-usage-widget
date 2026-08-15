@@ -1,0 +1,25 @@
+{
+  "id": "liquid",
+  "name": "Liquid",
+  "author": "Hebbala LLC",
+  "description": "Self-contained frosted glass with a drifting brand-tinted aurora.",
+  "tokens": {
+    "--skin-bg": "radial-gradient(140% 120% at 50% -10%, rgba(26, 22, 50, 0.52) 0%, rgba(13, 11, 24, 0.62) 100%)",
+    "--skin-bg-elevated": "rgba(0, 0, 0, 0.3)",
+    "--skin-border": "rgba(255, 255, 255, 0.14)",
+    "--skin-border-hover": "rgba(255, 255, 255, 0.30)",
+    "--skin-hairline": "rgba(255, 255, 255, 0.08)",
+    "--skin-radius": "22px",
+    "--skin-text": "rgba(247, 245, 255, 0.96)",
+    "--skin-text-dim": "rgba(223, 220, 240, 0.64)",
+    "--skin-text-faint": "rgba(205, 200, 232, 0.40)",
+    "--skin-accent": "#c9b8ff",
+    "--skin-accent-bg": "rgba(139, 92, 246, 0.24)",
+    "--skin-accent-border": "rgba(159, 122, 255, 0.55)",
+    "--skin-accent-text": "#c9b8ff",
+    "--skin-fill": "rgba(255, 255, 255, 0.07)",
+    "--skin-fill-hover": "rgba(255, 255, 255, 0.14)",
+    "--skin-track": "rgba(255, 255, 255, 0.10)"
+  },
+  "advanced": "liquid.css"
+}

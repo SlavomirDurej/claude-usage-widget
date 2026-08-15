@@ -1,0 +1,24 @@
+{
+  "id": "midnight-oled",
+  "name": "Midnight OLED",
+  "author": "Hebbala LLC",
+  "description": "True black for OLED screens, minimal and high-contrast.",
+  "tokens": {
+    "--skin-bg": "linear-gradient(135deg, #000000 0%, #060608 100%)",
+    "--skin-bg-elevated": "rgba(0, 0, 0, 0.6)",
+    "--skin-border": "rgba(255, 255, 255, 0.08)",
+    "--skin-border-hover": "rgba(255, 255, 255, 0.22)",
+    "--skin-hairline": "rgba(255, 255, 255, 0.06)",
+    "--skin-radius": "10px",
+    "--skin-text": "#f2f2f5",
+    "--skin-text-dim": "#8a8a92",
+    "--skin-text-faint": "#5c5c66",
+    "--skin-accent": "#4fd6ff",
+    "--skin-accent-bg": "rgba(79, 214, 255, 0.16)",
+    "--skin-accent-border": "rgba(79, 214, 255, 0.4)",
+    "--skin-accent-text": "#8fe6ff",
+    "--skin-fill": "rgba(255, 255, 255, 0.04)",
+    "--skin-fill-hover": "rgba(255, 255, 255, 0.09)",
+    "--skin-track": "rgba(255, 255, 255, 0.08)"
+  }
+}

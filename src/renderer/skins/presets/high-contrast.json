@@ -1,0 +1,24 @@
+{
+  "id": "high-contrast",
+  "name": "High Contrast",
+  "author": "Hebbala LLC",
+  "description": "Max-legibility accessibility skin — pure black/white with a yellow accent.",
+  "tokens": {
+    "--skin-bg": "#000000",
+    "--skin-bg-elevated": "#000000",
+    "--skin-border": "#ffffff",
+    "--skin-border-hover": "#ffd700",
+    "--skin-hairline": "rgba(255, 255, 255, 0.4)",
+    "--skin-radius": "6px",
+    "--skin-text": "#ffffff",
+    "--skin-text-dim": "#e0e0e0",
+    "--skin-text-faint": "#b0b0b0",
+    "--skin-accent": "#ffd700",
+    "--skin-accent-bg": "rgba(255, 215, 0, 0.22)",
+    "--skin-accent-border": "#ffd700",
+    "--skin-accent-text": "#ffd700",
+    "--skin-fill": "rgba(255, 255, 255, 0.1)",
+    "--skin-fill-hover": "rgba(255, 255, 255, 0.2)",
+    "--skin-track": "rgba(255, 255, 255, 0.2)"
+  }
+}

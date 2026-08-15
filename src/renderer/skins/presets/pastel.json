@@ -1,0 +1,24 @@
+{
+  "id": "pastel",
+  "name": "Pastel",
+  "author": "Hebbala LLC",
+  "description": "Soft lavender-and-blush light theme with a muted violet accent.",
+  "tokens": {
+    "--skin-bg": "linear-gradient(135deg, #f6eefc 0%, #fdeef4 100%)",
+    "--skin-bg-elevated": "rgba(0, 0, 0, 0.04)",
+    "--skin-border": "rgba(150, 110, 180, 0.16)",
+    "--skin-border-hover": "rgba(150, 110, 180, 0.32)",
+    "--skin-hairline": "rgba(150, 110, 180, 0.12)",
+    "--skin-radius": "16px",
+    "--skin-text": "#4a3a55",
+    "--skin-text-dim": "#8a7595",
+    "--skin-text-faint": "#b3a2bd",
+    "--skin-accent": "#b47ee0",
+    "--skin-accent-bg": "rgba(180, 126, 224, 0.16)",
+    "--skin-accent-border": "rgba(180, 126, 224, 0.4)",
+    "--skin-accent-text": "#8b4fc4",
+    "--skin-fill": "rgba(0, 0, 0, 0.035)",
+    "--skin-fill-hover": "rgba(0, 0, 0, 0.07)",
+    "--skin-track": "rgba(0, 0, 0, 0.08)"
+  }
+}

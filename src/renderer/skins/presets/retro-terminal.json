@@ -1,0 +1,24 @@
+{
+  "id": "retro-terminal",
+  "name": "Retro Terminal",
+  "author": "Hebbala LLC",
+  "description": "Phosphor-green CRT terminal look on near-black.",
+  "tokens": {
+    "--skin-bg": "linear-gradient(135deg, #030a03 0%, #0a140a 100%)",
+    "--skin-bg-elevated": "rgba(0, 0, 0, 0.5)",
+    "--skin-border": "rgba(70, 255, 120, 0.25)",
+    "--skin-border-hover": "rgba(70, 255, 120, 0.5)",
+    "--skin-hairline": "rgba(70, 255, 120, 0.15)",
+    "--skin-radius": "4px",
+    "--skin-text": "#a8ffb0",
+    "--skin-text-dim": "#5fcf70",
+    "--skin-text-faint": "#3a8a45",
+    "--skin-accent": "#46ff78",
+    "--skin-accent-bg": "rgba(70, 255, 120, 0.16)",
+    "--skin-accent-border": "rgba(70, 255, 120, 0.5)",
+    "--skin-accent-text": "#7dffa0",
+    "--skin-fill": "rgba(70, 255, 120, 0.06)",
+    "--skin-fill-hover": "rgba(70, 255, 120, 0.12)",
+    "--skin-track": "rgba(70, 255, 120, 0.12)"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "sunset",
+  "name": "Sunset",
+  "author": "Hebbala LLC",
+  "description": "Warm dusk gradient with an amber glow.",
+  "tokens": {
+    "--skin-bg": "linear-gradient(160deg, #2b1730 0%, #4a1f2e 55%, #602a24 100%)",
+    "--skin-bg-elevated": "rgba(0, 0, 0, 0.28)",
+    "--skin-border": "rgba(255, 200, 160, 0.16)",
+    "--skin-border-hover": "rgba(255, 200, 160, 0.32)",
+    "--skin-hairline": "rgba(255, 200, 160, 0.10)",
+    "--skin-radius": "14px",
+    "--skin-text": "#fbe9dd",
+    "--skin-text-dim": "#d9b3a4",
+    "--skin-text-faint": "#a97e70",
+    "--skin-accent": "#ff9a56",
+    "--skin-accent-bg": "rgba(255, 154, 86, 0.2)",
+    "--skin-accent-border": "rgba(255, 154, 86, 0.45)",
+    "--skin-accent-text": "#ffb684",
+    "--skin-fill": "rgba(255, 255, 255, 0.06)",
+    "--skin-fill-hover": "rgba(255, 255, 255, 0.12)",
+    "--skin-track": "rgba(255, 255, 255, 0.10)"
+  }
+}

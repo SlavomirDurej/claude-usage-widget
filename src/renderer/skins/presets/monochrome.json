@@ -1,0 +1,24 @@
+{
+  "id": "monochrome",
+  "name": "Monochrome",
+  "author": "Hebbala LLC",
+  "description": "Pure grayscale — no hue anywhere, including the accent.",
+  "tokens": {
+    "--skin-bg": "linear-gradient(135deg, #1c1c1c 0%, #262626 100%)",
+    "--skin-bg-elevated": "rgba(0, 0, 0, 0.32)",
+    "--skin-border": "rgba(255, 255, 255, 0.12)",
+    "--skin-border-hover": "rgba(255, 255, 255, 0.28)",
+    "--skin-hairline": "rgba(255, 255, 255, 0.07)",
+    "--skin-radius": "8px",
+    "--skin-text": "#f0f0f0",
+    "--skin-text-dim": "#a3a3a3",
+    "--skin-text-faint": "#707070",
+    "--skin-accent": "#d4d4d4",
+    "--skin-accent-bg": "rgba(255, 255, 255, 0.16)",
+    "--skin-accent-border": "rgba(255, 255, 255, 0.4)",
+    "--skin-accent-text": "#f5f5f5",
+    "--skin-fill": "rgba(255, 255, 255, 0.06)",
+    "--skin-fill-hover": "rgba(255, 255, 255, 0.12)",
+    "--skin-track": "rgba(255, 255, 255, 0.1)"
+  }
+}
