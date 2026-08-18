@@ -12,7 +12,7 @@ This file is tracked in the repo and visible to everyone.
 | Branch | Description |
 |--------|-------------|
 | `chore/backout-taskbar-dual-window` | Revert the per-percentage Windows taskbar icons feature (Discussion #32 / PR #115) after recurring, unresolved taskbar-icon identity corruption on long-running sessions; close/quit hardening and dynamic settings-panel sizing from that work are kept — see full writeup below |
-| `feature/taskbar-single-icon` | Reintroduce taskbar stats as a single split-panel icon on the main window's own taskbar button — no second window, no AppUserModelID — adapted directly from bastionecho's PR #115 — see full writeup below |
+| `feature/taskbar-single-icon` | Reintroduce taskbar stats as a single split-panel icon on the main window's own taskbar button — no second window, no *extra* per-window AppUserModelID (mainWindow's existing baseline AUMID is unaffected either way) — adapted directly from bastionecho's PR #115 — see full writeup below |
 | `feature/credits-based-100-percent-detection` | Force the session/weekly meter to 100%/critical when credit spend is actively increasing near the ceiling, since the reported percentage can lag behind real spend — see full writeup below |
 | `fix/session-key-decrypt-fallback` | Fix a silent-logout bug in session key decryption, and consolidate three duplicated inline decryption blocks into one shared helper — see full writeup below |
 | `feature/retry-backoff-jitter` | Retry with exponential backoff on transient 429s, classify RateLimited separately from SessionExpired, and jitter the auto-refresh interval — see full writeup below |
