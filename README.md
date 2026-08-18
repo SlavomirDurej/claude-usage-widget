@@ -191,6 +191,28 @@ claude-usage-widget --profile=work --reset-aumid      # resets a specific profil
 
 This exits immediately after saving the new identity — it doesn't launch the app. Relaunch normally afterward for it to take effect. Any taskbar pin made before the reset will need to be re-pinned, since Windows ties pins to the identity that was active when you pinned them.
 
+### Custom Login Domain Whitelist (Advanced)
+
+The login window only navigates to a fixed, hardcoded set of trusted domains (`claude.ai`, `accounts.google.com`, `appleid.apple.com`, `login.microsoftonline.com`) — anything else is blocked, which is the correct default for security, but it means some enterprise SSO setups (WorkOS, Okta, custom SAML/OIDC identity providers, etc.) get blocked partway through login with a `[Security] Blocked login navigation to untrusted domain` message in the console.
+
+If you hit this, you can add the specific domain your organization's SSO redirects through, without needing a code change or a new release:
+
+```
+claude-usage-widget --whitelist-add=api.workos.com     # exact domain only
+claude-usage-widget --whitelist-add=*.workos.com        # domain and any subdomain
+claude-usage-widget --whitelist-remove=api.workos.com
+claude-usage-widget --whitelist-list
+```
+
+Each command exits immediately after running — none of them launch the app. Added domains take effect the next time a login window is opened, not for a window already on screen.
+
+A few things worth knowing:
+- **Global, not per-profile.** The whitelist is shared by every `--profile` instance on the machine — it's a one-time trust decision about a domain, not account-specific data, so you only need to add a given domain once regardless of how many profiles you run.
+- **Additive only.** This can only add extra trusted domains on top of the hardcoded list — it has no way to remove or override `claude.ai` or the other built-in entries.
+- **Wildcard syntax is exact:** a bare domain like `api.workos.com` matches *only* that exact hostname. Prefixing with `*.` (e.g. `*.workos.com`) also matches the bare domain itself plus any subdomain — use it if your SSO flow might redirect through more than one subdomain of the same provider, but keep in mind it's a broader grant of trust than the exact form.
+- **Enterprise SSO can involve more than one hop.** WorkOS (and similar identity brokers) typically redirect once to the broker itself, then again to your organization's actual identity provider (Okta, Azure AD, Google Workspace, etc.) — a domain you control, not one Anthropic or the broker controls. If login still gets blocked after whitelisting the broker's domain, check the console for which domain got blocked next and add that one too.
+- Multiple `--whitelist-add`/`--whitelist-remove` calls can be run one after another; `--whitelist-list` shows the always-trusted built-in list separately from your own additions.
+
 ---
 
 ## Understanding the Display
