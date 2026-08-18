@@ -25,6 +25,35 @@ if (profileArg) {
   console.log(`[Profile] Using profile "${profileName}" -> userData: ${profilePath}`);
 }
 
+// --reset-aumid: generate a new AppUserModelID for this profile and exit immediately,
+// without starting the app. The next normal launch of this profile picks it up from
+// aumid-override.json (checked below, before app.setAppUserModelId()). Self-serve
+// recovery for Windows Shell state stuck against the current AUMID — see the
+// "Windows Taskbar/AppUserModelID Icon Corruption" note in CONTRIBUTING.md — without
+// needing a new --profile or a code release. Combine with --profile=<name> to target
+// a specific profile; omitting --profile resets the default profile.
+if (process.argv.includes('--reset-aumid')) {
+  if (process.platform !== 'win32') {
+    console.log('[Reset AUMID] AppUserModelID is a Windows-only concept — nothing to reset on this platform.');
+    app.exit(0);
+    return;
+  }
+  const overridePath = path.join(app.getPath('userData'), 'aumid-override.json');
+  const newAumid = `com.claudeusage.widget${profileName ? `.profile-${profileName}` : ''}.reset-${Date.now()}`;
+  try {
+    fs.mkdirSync(path.dirname(overridePath), { recursive: true });
+    fs.writeFileSync(overridePath, JSON.stringify({ aumid: newAumid }, null, 2), 'utf-8');
+    console.log(`[Reset AUMID] New AppUserModelID saved for ${profileName ? `profile "${profileName}"` : 'the default profile'}: ${newAumid}`);
+    console.log('[Reset AUMID] Takes effect on the next normal launch. Any taskbar pin made before this reset will need to be re-pinned afterward.');
+    app.exit(0);
+    return;
+  } catch (err) {
+    console.error('[Reset AUMID] Failed to write override:', err.message);
+    app.exit(1);
+    return;
+  }
+}
+
 // Required for Windows taskbar features (notifications, Jump List tasks) to register
 // reliably under one stable identity — without this, dev (npm start) and packaged
 // builds show up as generic "Electron" and custom Jump List tasks may not appear.
@@ -32,11 +61,32 @@ if (profileArg) {
 // Profile-scoped (not the same identity for every --profile instance): two profiles
 // sharing one AUMID would have their taskbar buttons grouped by Windows into one
 // entry. This suffix is stable per profile name, not regenerated per launch —
-// each profile just gets its own permanent, separate identity.
+// each profile just gets its own permanent, separate identity, unless overridden
+// by a prior --reset-aumid run (see above).
 if (process.platform === 'win32') {
-  const aumid = profileName
+  let aumid = profileName
     ? `com.claudeusage.widget.profile-${profileName}`
     : 'com.claudeusage.widget';
+
+  const overridePath = path.join(app.getPath('userData'), 'aumid-override.json');
+  try {
+    if (fs.existsSync(overridePath)) {
+      const override = JSON.parse(fs.readFileSync(overridePath, 'utf-8'));
+      if (override && typeof override.aumid === 'string' && override.aumid.trim()) {
+        aumid = override.aumid.trim();
+      }
+    }
+  } catch (err) {
+    // Corrupt or unreadable override file — fall back to the default identity
+    // rather than failing startup over a recovery file that itself needs recovery.
+    console.error('[AUMID] Failed to read aumid-override.json, using default identity:', err.message);
+  }
+
+  // Always logged (not gated behind DEBUG_LOG), same reasoning as the [Profile] line
+  // above — lets a reset be confirmed, or a corruption report be triaged, from
+  // terminal output alone.
+  console.log(`[AUMID] Using AppUserModelID: ${aumid}`);
+
   app.setAppUserModelId(aumid);
 }
 

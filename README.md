@@ -176,7 +176,20 @@ Launch with `--profile=<name>` to run a fully isolated instance — its own sess
 
 Example: `claude-usage-widget --profile=work`
 
+Profile names are sanitized to `[a-zA-Z0-9_-]` — anything else (including `.`) becomes `_`, so `--profile=jane.doe` resolves to the same profile as `--profile=jane_doe`. Worth knowing before assuming two different profile names you've typed are actually two different profiles.
+
 This is a power-user feature, tested by us but not yet broadly validated by the community — if you hit issues, please open a GitHub Discussion.
+
+### Recovering a Stuck Taskbar Icon (Windows, Advanced)
+
+If a Windows taskbar icon gets stuck showing a stale or generic icon and won't update no matter what — even after a reboot — the cause is usually Windows Shell state cached against the app's identity (AppUserModelID), not a bug in the running app. `--reset-aumid` gives that identity a fresh, never-before-seen value without needing a new profile:
+
+```
+claude-usage-widget --reset-aumid                    # resets the default profile
+claude-usage-widget --profile=work --reset-aumid      # resets a specific profile
+```
+
+This exits immediately after saving the new identity — it doesn't launch the app. Relaunch normally afterward for it to take effect. Any taskbar pin made before the reset will need to be re-pinned, since Windows ties pins to the identity that was active when you pinned them.
 
 ---
 
