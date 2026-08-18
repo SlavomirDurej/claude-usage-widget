@@ -292,7 +292,7 @@
                             </div>
                         </div>
 
-                        <!-- Row 3: compact mode + taskbar stats -->
+                        <!-- Row 3: compact mode + usage alerts -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Compact mode</span>
@@ -301,24 +301,24 @@
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
-                            <div class="settings-col" id="taskbarStatsCol">
-                                <span class="settings-row-label">Show taskbar stats</span>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="showTaskbarStatsToggle">
-                                    <span class="toggle-slider"></span>
-                                </label>
-                                <span class="settings-row-hint" id="taskbarStatsHint" style="display: none;">Hidden from taskbar</span>
-                            </div>
-                        </div>
-
-                        <!-- Row 4: usage alerts + organization selector -->
-                        <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Usage Alerts</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="usageAlertsToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
+                            </div>
+                        </div>
+
+                        <!-- Row 4: theme + organization selector -->
+                        <div class="settings-row-2col">
+                            <div class="settings-col">
+                                <span class="settings-row-label">Theme</span>
+                                <div class="theme-selector">
+                                    <button class="theme-btn active" data-theme="dark">Dark</button>
+                                    <button class="theme-btn" data-theme="light">Light</button>
+                                    <button class="theme-btn" data-theme="system">System</button>
+                                </div>
                             </div>
                             <div class="settings-col" id="orgSelectorCol" style="display: none;">
                                 <span class="settings-row-label">Organization</span>
@@ -329,21 +329,7 @@
                             </div>
                         </div>
 
-                        <!-- Row 5: theme (blank cell to the right — Theme's button row is the
-                             widest control in the panel and needs room to breathe) -->
-                        <div class="settings-row-2col">
-                            <div class="settings-col">
-                                <span class="settings-row-label">Theme</span>
-                                <div class="theme-selector">
-                                    <button class="theme-btn active" data-theme="dark">Dark</button>
-                                    <button class="theme-btn" data-theme="light">Light</button>
-                                    <button class="theme-btn" data-theme="system">System</button>
-                                </div>
-                            </div>
-                            <div class="settings-col"></div>
-                        </div>
-
-                        <!-- Row 6: time format + warn thresholds -->
+                        <!-- Row 5: time format + warn thresholds -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Time format</span>
@@ -369,7 +355,7 @@
                             </div>
                         </div>
 
-                        <!-- Row 7: date format + auto refresh -->
+                        <!-- Row 6: date format + auto refresh -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Date format</span>
