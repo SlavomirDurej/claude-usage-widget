@@ -62,6 +62,9 @@ claude-usage-widget/
 ├── package.json                 # Dependencies & build config
 ├── src/
 │   ├── fetch-via-window.js      # Login flow handler
+│   ├── normalize-usage-limits.js # Usage-percentage normalization
+│   ├── detect-active-credit-spend.js # Forces meter to 100% on active credit spend
+│   ├── domain-whitelist.js      # User-editable login-window domain allowlist
 │   └── renderer/
 │       ├── index.html           # Widget UI
 │       ├── app.js               # Frontend logic
@@ -197,6 +200,7 @@ app.whenReady().then(() => {
 ### Manual Testing Checklist
 - [ ] Clean install on target OS
 - [ ] Login flow works
+- [ ] Domain whitelist CLI (`--whitelist-add`/`--whitelist-remove`/`--whitelist-list`) works and is global across profiles
 - [ ] Data refreshes correctly
 - [ ] Tray icons display properly
 - [ ] Taskbar icon displays properly (Windows, if enabled)
@@ -243,6 +247,13 @@ Check `main.js` → `did-finish-load` event handler:
 1. URL should contain 'chat' or 'new'
 2. sessionKey cookie must be present
 3. Organization ID extraction may fail on new account types
+
+### Login Window Blocked by Domain Allowlist
+`[Security] Blocked login navigation to untrusted domain: ...` in the console means the login window tried to navigate somewhere outside `LOGIN_ALLOWED_DOMAINS` (`main.js`) and `src/domain-whitelist.js`'s user-added entries. This is expected behavior for genuinely untrusted domains — but enterprise SSO (WorkOS, Okta, custom SAML/OIDC IdPs) legitimately redirects through domains that can't all be hardcoded in advance, since they're customer-specific.
+
+Two things worth knowing while working in this area:
+- **This is by design, additive-only, not a bug to "fix" by loosening the hardcoded list.** `LOGIN_ALLOWED_DOMAINS` should stay minimal and fixed; `--whitelist-add`/`--whitelist-remove`/`--whitelist-list` (see README's "Custom Login Domain Whitelist" section) is the intended escape hatch, self-serviceable by whoever hits it, without needing a code change per-organization's IdP.
+- **SSO can involve more than one redirect hop.** A user whitelisting the broker's domain (e.g. `api.workos.com`) may still get blocked on the *next* hop, when the broker redirects to their own org's actual IdP. That's expected, not a bug in this feature — check the console for which domain got blocked and whitelist that one too. Don't assume one report of "still blocked after whitelisting X" means the whitelist mechanism itself failed; check whether it's actually a *different* domain being blocked now.
 
 ### API Returns 401 Unauthorized
 Session expired. Test re-login flow from tray menu.

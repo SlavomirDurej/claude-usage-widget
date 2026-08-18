@@ -9,10 +9,34 @@ const { detectActiveCreditSpend } = require('./src/detect-active-credit-spend');
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
 
+// Security: restrict login-window navigation to trusted domains only. Fixed,
+// not user-editable — see src/domain-whitelist.js for the additive user layer
+// on top of this (--whitelist-add/--whitelist-remove/--whitelist-list).
+const LOGIN_ALLOWED_DOMAINS = [
+  'claude.ai',
+  'accounts.google.com',
+  'appleid.apple.com',
+  'login.microsoftonline.com'
+];
+
 // Profile isolation: --profile=<name> launches a fully separate instance with its own
 // session, cookies, and settings. Must be set before anything reads app.getPath('userData').
 const fs = require('fs');
 const os = require('os');
+const {
+  loadWhitelist,
+  saveWhitelist,
+  normalizeEntry,
+  isCoveredByHardcoded,
+  isHostnameAllowed,
+  getWhitelistPath
+} = require('./src/domain-whitelist');
+
+// Captured before any --profile remapping below — the domain whitelist is a
+// machine-level trust decision, not account data, so it lives in one place
+// shared by every --profile instance rather than being duplicated per profile.
+const baseUserDataPath = app.getPath('userData');
+
 const profileArg = process.argv.find(a => a.startsWith('--profile='));
 let profileName = null;
 if (profileArg) {
@@ -23,6 +47,78 @@ if (profileArg) {
   // triaged from terminal output alone: confirms which profile resolved to which
   // userData root, distinguishing profile-folder isolation from org-ID isolation.
   console.log(`[Profile] Using profile "${profileName}" -> userData: ${profilePath}`);
+}
+
+// --whitelist-add / --whitelist-remove / --whitelist-list: manage the user's
+// domain whitelist and exit immediately, without starting the app. Global —
+// operates on baseUserDataPath regardless of any --profile also passed, since
+// the whitelist is shared by every profile (see domain-whitelist.js header).
+// Additive only: cannot remove or override LOGIN_ALLOWED_DOMAINS, only add to it.
+{
+  const addArg = process.argv.find(a => a.startsWith('--whitelist-add='));
+  const removeArg = process.argv.find(a => a.startsWith('--whitelist-remove='));
+  const listRequested = process.argv.includes('--whitelist-list');
+
+  if (addArg || removeArg || listRequested) {
+    const whitelistPath = getWhitelistPath(baseUserDataPath);
+
+    if (addArg) {
+      const rawValue = addArg.split('=').slice(1).join('=');
+      const result = normalizeEntry(rawValue);
+      if (!result.ok) {
+        console.error(`[Whitelist] Not added: ${result.reason}`);
+        app.exit(1);
+        return;
+      }
+      const bareForCoverageCheck = result.value.startsWith('*.') ? result.value.slice(2) : result.value;
+      if (isCoveredByHardcoded(bareForCoverageCheck, LOGIN_ALLOWED_DOMAINS)) {
+        console.log(`[Whitelist] "${result.value}" is already trusted by default (${LOGIN_ALLOWED_DOMAINS.join(', ')}) — no need to add it.`);
+        app.exit(0);
+        return;
+      }
+      const entries = loadWhitelist(baseUserDataPath);
+      if (entries.includes(result.value)) {
+        console.log(`[Whitelist] "${result.value}" is already on the whitelist.`);
+        app.exit(0);
+        return;
+      }
+      entries.push(result.value);
+      entries.sort();
+      saveWhitelist(baseUserDataPath, entries);
+      console.log(`[Whitelist] Added "${result.value}". Takes effect the next time a login window is opened. Saved to: ${whitelistPath}`);
+      app.exit(0);
+      return;
+    }
+
+    if (removeArg) {
+      const rawValue = removeArg.split('=').slice(1).join('=').trim().toLowerCase();
+      const entries = loadWhitelist(baseUserDataPath);
+      const index = entries.indexOf(rawValue);
+      if (index === -1) {
+        console.log(`[Whitelist] "${rawValue}" was not found on the whitelist. Use --whitelist-list to see current entries — note that removal requires an exact match, including a leading "*." if the entry has one.`);
+        app.exit(1);
+        return;
+      }
+      entries.splice(index, 1);
+      saveWhitelist(baseUserDataPath, entries);
+      console.log(`[Whitelist] Removed "${rawValue}".`);
+      app.exit(0);
+      return;
+    }
+
+    if (listRequested) {
+      const entries = loadWhitelist(baseUserDataPath);
+      console.log(`[Whitelist] Always trusted (built-in, not editable): ${LOGIN_ALLOWED_DOMAINS.join(', ')}`);
+      if (entries.length === 0) {
+        console.log('[Whitelist] No user-added domains yet. Add one with --whitelist-add=<domain>, e.g. --whitelist-add=api.workos.com or --whitelist-add=*.workos.com');
+      } else {
+        console.log(`[Whitelist] User-added (${whitelistPath}):`);
+        entries.forEach((entry) => console.log(`  ${entry}`));
+      }
+      app.exit(0);
+      return;
+    }
+  }
 }
 
 // --reset-aumid: generate a new AppUserModelID for this profile and exit immediately,
@@ -1542,24 +1638,24 @@ ipcMain.handle('detect-session-key', async () => {
 
     let resolved = false;
 
-    // Security: restrict navigation to trusted domains only
-    const allowedLoginDomains = [
-      'claude.ai',
-      'accounts.google.com',
-      'appleid.apple.com',
-      'login.microsoftonline.com'
-    ];
+    // Security: navigation allowlist. Combines the fixed LOGIN_ALLOWED_DOMAINS
+    // list above with any additional domains from the user's own whitelist
+    // (see src/domain-whitelist.js) — loaded fresh per login-window open so a
+    // --whitelist-add made between launches takes effect without a restart of
+    // the whole app, just of the login window itself.
+    const userWhitelist = loadWhitelist(baseUserDataPath);
 
     loginWin.webContents.on('will-navigate', (event, url) => {
       try {
         const hostname = new URL(url).hostname;
-        const isAllowed = allowedLoginDomains.some(domain =>
-          hostname === domain || hostname.endsWith('.' + domain)
-        );
-        if (!isAllowed) {
+        const result = isHostnameAllowed(hostname, LOGIN_ALLOWED_DOMAINS, userWhitelist);
+        if (!result.allowed) {
           event.preventDefault();
           console.warn('[Security] Blocked login navigation to untrusted domain:', url);
         } else {
+          if (result.source === 'user') {
+            console.log(`[Security] Allowed navigation to ${hostname} (user-whitelisted via "${result.matchedEntry}")`);
+          }
           // Update title bar to show current URL (read-only)
           loginWin.setTitle(`Claude Login - ${url}`);
         }
