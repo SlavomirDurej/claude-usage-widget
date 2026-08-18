@@ -18,6 +18,7 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 🔒 **Secure** — Encrypted credential storage  
 📍 **Always on Top** — User-controlled, stays visible across all workspaces  
 💾 **System Tray** — Minimizes to tray for easy access  
+🪟 **Taskbar Icon (Windows)** — Session and weekly usage on the taskbar icon itself, split into two panels, showing the live percentage (off by default — opt in via Settings)  
 ⚙️ **Settings Panel** — Persistent preferences for startup, theme, tray, thresholds, and date/time formats  
 🔔 **Usage Alerts** — Desktop notifications when usage crosses configurable warn/danger thresholds  
 🔔 **Update Notifications** — Automatic check for new releases on startup  
@@ -43,6 +44,7 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 - ⚙️ **Launch at startup** — Auto-start with Windows or macOS login
 - 📌 **Hide from taskbar** — Tray-only mode (requires tray stats)
 - 💾 **Show tray stats** — Dual system tray icons with live session/weekly percentages (Windows)
+- 🪟 **Show taskbar stats** — Session and weekly usage on the taskbar icon, split left/right (Windows, off by default)
 - 🎨 **Theme selector** — Dark / Light / System
 - ⚠️ **Warning thresholds** — Configurable amber and red levels for usage bars
 - 🔔 **Usage alerts** — Desktop notifications at warn/danger thresholds
@@ -164,6 +166,10 @@ npm start
 
 Right-click the tray icon for: Show/Hide, Refresh, Re-login, Settings, Exit.
 
+### Taskbar Icon (Windows)
+
+Opt in via Settings → "Show taskbar stats" (off by default) to show session and weekly usage directly on the taskbar icon: split into left (session) and right (weekly) panels, colored by threshold the same way the tray icons and progress bars are, with a white X at 99–100%. Click the icon to toggle the main window, same as before. Requires "Hide from taskbar" to be off, since that setting removes the taskbar presence entirely in favor of tray-only mode.
+
 ### Multi-Account Support (Advanced)
 
 Launch with `--profile=<name>` to run a fully isolated instance — its own session, cookies, and settings — so you can track two Claude accounts side by side without them interfering.
@@ -247,7 +253,7 @@ Special thanks to these contributors who have improved the widget:
 - [@torsten-liermann](https://github.com/torsten-liermann) - Per-model weekly limit support (Fable)
 - [@gastyg](https://github.com/gastyg) - Fable row for compact mode
 - [@irishpolyglot](https://github.com/irishpolyglot) - Fable timer-pairing bug fix
-- [@bastionecho](https://github.com/bastionecho) - Original taskbar usage icon concept and pixel-drawing implementation (PR #115)
+- [@bastionecho](https://github.com/bastionecho) - Single-icon split-panel taskbar usage design, pixel-drawing implementation, and settings-panel dynamic sizing, directly adapted (PR #115)
 - [@adihebbalae](https://github.com/adihebbalae) - Identified the silent-logout bug in session key decryption fallback (PR #110)
 - [@mtspl](https://github.com/mtspl) - Rate-limit retry/backoff and auto-refresh jitter design (PR #114)
 

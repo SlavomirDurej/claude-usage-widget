@@ -47,6 +47,7 @@ Thank you for your interest in contributing! This guide will help you set up you
 - Close (X, Alt+F4, or "Close window") fully quits the app
 - Right-click tray icon shows menu, "Exit" fully quits
 - System tray usage indicators (dual icons on Windows)
+- Taskbar usage icon (Windows, opt-in — split session/weekly panels on the taskbar icon)
 - Progress bars animate smoothly
 - Timers count down correctly
 - Organization selector (if you have Teams + Personal)
@@ -126,6 +127,16 @@ Force specific percentages in `main.js` for testing:
 const weeklyIcon = generatePercentageIcon(99, weeklyColor); // Test Red X
 ```
 
+### Test Taskbar Icon (Windows)
+Opt-in feature (Settings → "Show taskbar stats", off by default). Single icon on the main window's own taskbar button (`mainWindow.setIcon()`) — no second window, no separate AppUserModelID. Split into left (session) and right (weekly) panels with a divider between them.
+
+Force specific percentages for testing via `generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dangerThreshold)`, same threshold-color/99%-X-glyph logic as the tray icons, drawn at full 128px so both panels stay legible after Windows downscales to real taskbar size.
+
+Known gotchas if you're working in this area:
+- Drawn at 128x128 deliberately — a tray-sized (20px) icon upscaled to taskbar size would be blurry; drawing large and letting Windows downscale keeps both panels legible across DPI settings.
+- If Windows taskbar icons look stuck, wrong-sized, or a test window won't behave, a stale Explorer process from a prior bad state is a common cause — Task Manager → Windows Explorer → Restart before concluding it's a code bug.
+- See the "Windows Taskbar/AppUserModelID Icon Corruption (general)" note further down if an icon refuses to update no matter what the code does.
+
 ### Mock API Response
 For testing UI without live API calls, add to `fetchUsageData()` in `app.js`:
 ```javascript
@@ -188,6 +199,7 @@ app.whenReady().then(() => {
 - [ ] Login flow works
 - [ ] Data refreshes correctly
 - [ ] Tray icons display properly
+- [ ] Taskbar icon displays properly (Windows, if enabled)
 - [ ] Close (X/Alt+F4) fully quits; minimize keeps a tray/taskbar icon as the way back in
 - [ ] Settings persist across restarts
 - [ ] Logout clears session
@@ -246,6 +258,7 @@ Not specific to any current feature — this can affect `mainWindow`'s own taskb
 - If icons look visually stuck or wrong-sized, restart Explorer before assuming it's a code issue.
 - If a taskbar icon refuses to update no matter what the code does — `setIcon()` completes without throwing, but the taskbar button shows a stale or generic default icon regardless — and a reboot, `ie4uinit -ClearIconCache`, and Explorer restart *all* fail to fix it, the cause is likely stale Windows Shell state cached against that window's AppUserModelID specifically (Jump List "Automatic Destinations" data persists separately from the general icon cache and doesn't get cleared by any of the above). Confirm by temporarily setting a brand-new, never-used AUMID (`app.setAppUserModelId()` or `win.setAppDetails({ appId: ... })`) — if the icon immediately starts working, that's the cause.
 - **Caveat, added after a recurrence:** the app previously shipped a fix based on this theory (scoping the AUMID per `--profile`, and guarding a periodic `setAlwaysOnTop()` interval that was hammering the icon ~720x/hour). The same symptom recurred on a long-running profile with that fix in place, so this theory should be treated as a documented lead, not a confirmed root cause. If you hit this again, don't assume the AUMID/interval explanation is complete — collect fresh evidence before committing to a fix.
+- **Actively relevant again:** the taskbar-stats feature calls `mainWindow.setIcon()` on every usage refresh (default every 5 minutes) via `updateTaskbarIcon()` — the same call path implicated in the original corruption, though at a far lower frequency than the interval that was hammering it before. If taskbar-icon corruption is reported again, check whether it correlates with taskbar stats being enabled before assuming it's unrelated.
 
 ## Submitting Contributions
 
