@@ -1,4 +1,34 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage, screen } = require('electron');
+
+// Linux/Wayland: force Xwayland compatibility mode so the second system tray
+// icon (weekly) actually renders (Issue #119). Electron's Tray backend only
+// gives the *first* Tray() instance in a process real StatusNotifierItem
+// (SNI) support; every subsequent instance falls back to the older
+// GtkStatusIcon protocol (documented at
+// https://www.electronjs.org/docs/latest/api/tray). GtkStatusIcon has no
+// working implementation under native Wayland — it depends on X11 window-
+// server semantics Wayland doesn't provide — so it silently fails to appear.
+// Electron 38 changed the *default* from Xwayland compat mode to native
+// Wayland, which is what exposed this: earlier versions quietly ran every
+// session through Xwayland regardless of the actual session type, so the
+// GtkStatusIcon fallback always had something to attach to. This isn't
+// undoing a regression in the traditional sense — the fallback's Wayland gap
+// always existed, Electron 38 just stopped papering over it by default.
+// Must be called before app.whenReady() (this file's very first executable
+// statement, deliberately, for exactly that reason) and only on Linux/
+// Wayland — X11 sessions, Windows, and macOS are unaffected and untouched.
+// Confirmed via manual Electron version bisection: 37.10.3 unaffected,
+// 38.8.6+ affected; --ozone-platform=x11 confirmed to resolve it on 41.x
+// (the range this app currently installs, per package.json's ^41.10.1). Not
+// yet effective as of Electron 43.x in ad hoc testing — root cause for that
+// not yet identified, and out of scope today since npm's caret range on our
+// pin can't install past 41.x without a deliberate package.json change. If
+// a future Electron bump changes the installed major version, re-verify the
+// second tray icon manually on Linux/Wayland before shipping.
+if (process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+}
+
 const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
