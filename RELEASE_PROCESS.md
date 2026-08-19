@@ -15,26 +15,31 @@ Use this when you want to produce real installable artifacts for testing without
 
 **Prerequisites:** feature branch already merged to `develop` and pushed to origin.
 
-1. **Tag `develop` directly:**
+1. **Documentation review — do this as its own pass, before tagging anything:**
+   - Full read-through of `STAGED_CHANGES.md` for the cycle: stale "in progress"/"not yet confirmed" language on anything since confirmed, missing branch-table rows for any merged branch (every merged branch gets one), and outdated caveats elsewhere in `README.md`/`CONTRIBUTING.md`/`QUICKSTART.md` (platform/signing status, close/minimize behavior descriptions, etc.).
+   - **Contributor credit check:** every code/design contributor this cycle (opened a PR, even if adapted rather than merged verbatim) has a `README.md` Contributors line and `Co-authored-by` on the relevant commit. Every bug/issue/discussion reporter who contributed no code is credited in prose only (`STAGED_CHANGES.md` + the GitHub reply to them) and is **not** added to the Contributors list — see `CLAUDE.md`'s "Contributor Credit" section for the full policy and the quick test for which bucket someone falls into.
+   - Fix anything found on its own small `docs/*` branch, merge to `develop`, before moving to step 2.
+
+2. **Tag `develop` directly:**
    ```
    git checkout develop
    git tag -a vX.Y.Z-rc.N -m "vX.Y.Z-rc.N - RC build for <feature description>"
    git push origin vX.Y.Z-rc.N
    ```
 
-2. **Verify CI triggers** on all three platform workflows from the tag push.
+3. **Verify CI triggers** on all three platform workflows from the tag push.
 
-3. **GitHub will create a pre-release** — confirm it is marked `prerelease: true` and `draft: false`.
+4. **GitHub will create a pre-release** — confirm it is marked `prerelease: true` and `draft: false`.
 
-4. **Test the builds** — download and test Windows (installer + portable), macOS, Linux.
+5. **Test the builds** — download and test Windows (installer + portable), macOS, Linux.
 
-5. **If issues found:**
+6. **If issues found:**
    - Fix on a new branch off `develop`, merge back to `develop`
    - Delete the GitHub release first (UI)
    - Delete the tag: `git push origin :refs/tags/vX.Y.Z-rc.N && git tag -d vX.Y.Z-rc.N`
-   - Increment RC number and repeat from step 1
+   - Increment RC number and repeat from step 2 (documentation review from step 1 doesn't need re-running unless the fix itself touched docs)
 
-6. **`main` is never touched during this process.**
+7. **`main` is never touched during this process.**
 
 ---
 
