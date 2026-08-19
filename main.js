@@ -14,19 +14,35 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, s
 // GtkStatusIcon fallback always had something to attach to. This isn't
 // undoing a regression in the traditional sense — the fallback's Wayland gap
 // always existed, Electron 38 just stopped papering over it by default.
-// Must be called before app.whenReady() (this file's very first executable
-// statement, deliberately, for exactly that reason) and only on Linux/
-// Wayland — X11 sessions, Windows, and macOS are unaffected and untouched.
-// Confirmed via manual Electron version bisection: 37.10.3 unaffected,
-// 38.8.6+ affected; --ozone-platform=x11 confirmed to resolve it on 41.x
-// (the range this app currently installs, per package.json's ^41.10.1). Not
-// yet effective as of Electron 43.x in ad hoc testing — root cause for that
-// not yet identified, and out of scope today since npm's caret range on our
-// pin can't install past 41.x without a deliberate package.json change. If
-// a future Electron bump changes the installed major version, re-verify the
-// second tray icon manually on Linux/Wayland before shipping.
-if (process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland') {
-  app.commandLine.appendSwitch('ozone-platform', 'x11');
+//
+// Implemented as a one-time self-relaunch, NOT app.commandLine.appendSwitch().
+// appendSwitch() was tried first and shipped briefly — it's technically the
+// first executable statement in this file, but that's still too late:
+// Chromium's native Ozone/platform-backend selection happens in C++ before
+// Electron hands control to this script at all, so appendSwitch() landed in
+// a broken half-X11/half-Wayland hybrid state (confirmed live: XGetWindow-
+// Attributes failures, zero tray icons, worse than the original bug) rather
+// than genuinely forcing Xwayland. A real command-line argument, present in
+// argv from process start, IS parsed early enough — hence relaunching once
+// with the flag baked into the new process's actual argv. The argv guard
+// below prevents relaunching forever once that flag is already present.
+// Confirmed working live on a real Fedora 44 KDE Plasma Wayland session:
+// clean single relaunch, both tray icons render, busctl confirms both
+// registered.
+//
+// Only on Linux/Wayland — X11 sessions, Windows, and macOS are unaffected
+// and untouched. Confirmed via manual Electron version bisection: 37.10.3
+// unaffected, 38.8.6+ affected; this relaunch-with-flag approach confirmed
+// to resolve it on 41.x (the range this app currently installs, per
+// package.json's ^41.10.1). Not yet effective as of Electron 43.x in ad hoc
+// testing — root cause for that not yet identified, and out of scope today
+// since npm's caret range on our pin can't install past 41.x without a
+// deliberate package.json change. If a future Electron bump changes the
+// installed major version, re-verify the second tray icon manually on
+// Linux/Wayland before shipping.
+if (process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland' && !process.argv.includes('--ozone-platform=x11')) {
+  app.relaunch({ args: process.argv.slice(1).concat(['--ozone-platform=x11']) });
+  app.exit(0);
 }
 
 const path = require('path');
