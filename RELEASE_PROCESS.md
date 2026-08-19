@@ -31,15 +31,19 @@ Use this when you want to produce real installable artifacts for testing without
 
 4. **GitHub will create a pre-release** — confirm it is marked `prerelease: true` and `draft: false`.
 
-5. **Test the builds** — download and test Windows (installer + portable), macOS, Linux.
+5. **Wait for the build to complete successfully before writing anything.** Don't draft release notes while CI is still running — RC builds have failed and needed deleting/re-tagging often enough that notes written against a build that gets scrapped are wasted effort. Once green:
+   - Confirm all expected assets are present, **including `.blockmap` files — keep these, do not delete them.** They're differential-update data `electron-updater` needs to ship people a delta instead of a full re-download; removing them (as was done, unknowingly, for every release before this note existed) silently makes every update a full download for no benefit.
+   - Write the release description using [RELEASE_CANDIDATE_PROCESS.md](RELEASE_CANDIDATE_PROCESS.md)'s template, then save it to the release.
 
-6. **If issues found:**
+6. **Test the builds** — download and test Windows (installer + portable), macOS, Linux.
+
+7. **If issues found:**
    - Fix on a new branch off `develop`, merge back to `develop`
    - Delete the GitHub release first (UI)
    - Delete the tag: `git push origin :refs/tags/vX.Y.Z-rc.N && git tag -d vX.Y.Z-rc.N`
    - Increment RC number and repeat from step 2 (documentation review from step 1 doesn't need re-running unless the fix itself touched docs)
 
-7. **`main` is never touched during this process.**
+8. **`main` is never touched during this process.**
 
 ---
 
@@ -96,4 +100,5 @@ Only after RC testing passes and enough changes have accumulated on `develop` to
 - **Push order for formal releases:** `main` push first to verify CI, then the tag — avoids accumulating failed release job runs.
 - **Orphaned drafts:** If a release job misfires, delete the GitHub release before deleting the tag — otherwise orphaned drafts persist.
 - **BOM-free writes:** Always use `[System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))` when writing files via PowerShell — never `Out-File -Encoding utf8`.
+- **`.blockmap` files are required, not cleanup candidates.** They're `electron-updater`'s differential-update data — without them, an update falls back to a full re-download for that version's upgrade path instead of a smaller delta.
 - **`STAGED_CHANGES.md`** accumulates entries per branch. Clear it after each formal release.
