@@ -201,6 +201,7 @@ app.whenReady().then(() => {
 - [ ] Clean install on target OS
 - [ ] Login flow works
 - [ ] Domain whitelist CLI (`--whitelist-add`/`--whitelist-remove`/`--whitelist-list`) works and is global across profiles
+- [ ] Both system tray icons show on Linux/Wayland, not just weekly (Issue #119)
 - [ ] Data refreshes correctly
 - [ ] Tray icons display properly
 - [ ] Taskbar icon displays properly (Windows, if enabled)
@@ -262,6 +263,15 @@ Session expired. Test re-login flow from tray menu.
 - Check `updateTrayIcons()` is called after data fetch
 - Verify `generatePercentageIcon()` returns valid NativeImage
 - Windows: Icon cache may need refresh (restart Explorer)
+
+### Second Tray Icon Missing on Linux (Issue #119)
+Root-caused and fixed — see the full writeup in `STAGED_CHANGES.md` for how this was diagnosed. Summary for anyone hitting a related symptom:
+
+- **Mechanism:** Electron's Linux tray backend only gives the *first* `Tray()` instance in a process real StatusNotifierItem (SNI) support (documented in [Electron's own Tray docs](https://www.electronjs.org/docs/latest/api/tray)); every subsequent instance falls back to the older `GtkStatusIcon` protocol, which has no working implementation under native Wayland. `main.js` now forces Xwayland compatibility mode (`app.commandLine.appendSwitch('ozone-platform', 'x11')`) on Linux/Wayland sessions specifically, as its very first executable statement, so that fallback has something to attach to.
+- **If you're debugging something that looks similar but isn't fixed by this:** confirm you're actually testing on a *real* Linux/Wayland session, not X11 — the fix is gated to Wayland only (`process.env.XDG_SESSION_TYPE === 'wayland'`) and does nothing on X11, where this was never broken.
+- **`busctl --user introspect org.kde.StatusNotifierWatcher /StatusNotifierWatcher | grep -i registered`** is the fastest way to check ground truth on KDE — shows exactly which items are actually registered on the bus, independent of whether anything visually renders in the tray.
+- **Known gap, not yet fixed:** this was only verified against Electron 41.x (this app's current pinned range, `^41.10.1`). Ad hoc testing against Electron 43.4.1 showed the fix *not* working — zero tray items registered at all, worse than the original bug. **Do not bump the Electron dependency past 41.x without manually re-testing both system tray icons on a real Linux/Wayland session first** — this isn't caught by any automated check, and is exactly the kind of platform-specific regression that shipped unnoticed in v1.7.6 originally.
+- **General approach if this resurfaces differently:** a real Linux VM (not a hand-layered hybrid — install the actual matching desktop-environment spin ISO, e.g. Fedora's real KDE Plasma spin, not a generic edition with the desktop package bolted on afterward) plus manually bisecting the Electron dependency version (hold app code fixed, only change `package.json`'s `electron` version, `rm -rf node_modules package-lock.json && npm install` between each) is what actually found the previous root cause. Reading the code alone did not — the regression was in Electron's own Linux tray backend, not this app's code.
 
 ### Windows Taskbar/AppUserModelID Icon Corruption (general)
 Not specific to any current feature — this can affect `mainWindow`'s own taskbar icon, since it carries an AUMID (`app.setAppUserModelId()`) regardless of any per-feature icon drawing.
