@@ -1,48 +1,44 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage, screen } = require('electron');
 
-// Linux/Wayland: force Xwayland compatibility mode so the second system tray
-// icon (weekly) actually renders (Issue #119). Electron's Tray backend only
-// gives the *first* Tray() instance in a process real StatusNotifierItem
-// (SNI) support; every subsequent instance falls back to the older
-// GtkStatusIcon protocol (documented at
-// https://www.electronjs.org/docs/latest/api/tray). GtkStatusIcon has no
-// working implementation under native Wayland — it depends on X11 window-
-// server semantics Wayland doesn't provide — so it silently fails to appear.
-// Electron 38 changed the *default* from Xwayland compat mode to native
-// Wayland, which is what exposed this: earlier versions quietly ran every
-// session through Xwayland regardless of the actual session type, so the
-// GtkStatusIcon fallback always had something to attach to. This isn't
-// undoing a regression in the traditional sense — the fallback's Wayland gap
-// always existed, Electron 38 just stopped papering over it by default.
-//
-// Implemented as a one-time self-relaunch, NOT app.commandLine.appendSwitch().
-// appendSwitch() was tried first and shipped briefly — it's technically the
-// first executable statement in this file, but that's still too late:
-// Chromium's native Ozone/platform-backend selection happens in C++ before
-// Electron hands control to this script at all, so appendSwitch() landed in
-// a broken half-X11/half-Wayland hybrid state (confirmed live: XGetWindow-
-// Attributes failures, zero tray icons, worse than the original bug) rather
-// than genuinely forcing Xwayland. A real command-line argument, present in
-// argv from process start, IS parsed early enough — hence relaunching once
-// with the flag baked into the new process's actual argv. The argv guard
-// below prevents relaunching forever once that flag is already present.
-// Confirmed working live on a real Fedora 44 KDE Plasma Wayland session:
-// clean single relaunch, both tray icons render, busctl confirms both
-// registered.
-//
-// Only on Linux/Wayland — X11 sessions, Windows, and macOS are unaffected
-// and untouched. Confirmed via manual Electron version bisection: 37.10.3
-// unaffected, 38.8.6+ affected; this relaunch-with-flag approach confirmed
-// to resolve it on 41.x (the range this app currently installs, per
-// package.json's ^41.10.1). Not yet effective as of Electron 43.x in ad hoc
-// testing — root cause for that not yet identified, and out of scope today
-// since npm's caret range on our pin can't install past 41.x without a
-// deliberate package.json change. If a future Electron bump changes the
-// installed major version, re-verify the second tray icon manually on
-// Linux/Wayland before shipping.
-if (process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland' && !process.argv.includes('--ozone-platform=x11')) {
-  app.relaunch({ args: process.argv.slice(1).concat(['--ozone-platform=x11']) });
-  app.exit(0);
+// Linux/Wayland: force Xwayland compat mode so the second system tray icon
+// (weekly) renders — Electron only gives the *first* Tray() instance real
+// StatusNotifierItem support; later ones fall back to GtkStatusIcon, which
+// doesn't work under native Wayland (Issue #119). Done via a one-time
+// self-relaunch with a real argv flag, not app.commandLine.appendSwitch()
+// — Chromium picks its Ozone backend before appendSwitch() would take
+// effect. Linux/Wayland only; X11, Windows, and macOS are untouched.
+relaunchUnderXwaylandIfNeeded();
+
+function relaunchUnderXwaylandIfNeeded() {
+  const flag = '--ozone-platform=x11';
+  if (process.platform !== 'linux' || process.env.XDG_SESSION_TYPE !== 'wayland' || process.argv.includes(flag)) {
+    return;
+  }
+
+  const relaunchArgs = process.argv.slice(1).concat([flag]);
+
+  if (process.env.APPIMAGE) {
+    // app.relaunch() can't be used here: it spawns an intermediate
+    // "relauncher" helper off the *current* (mounted) binary, which blocks
+    // waiting for this process to exit — but this process exiting is what
+    // unmounts the binary the helper is still running from, killing it
+    // before it ever launches the real target. Spawning process.env.APPIMAGE
+    // (the original .appimage file) ourselves sidesteps that entirely; it
+    // gets its own independent mount. Trade-off: this process's own AppImage
+    // mount can't fully unmount until the relaunched instance exits (it
+    // inherits a few fds into it), so a harmless idle process+mount lingers
+    // for the session's lifetime and cleans up on quit.
+    const { spawn } = require('child_process');
+    const child = spawn(process.env.APPIMAGE, relaunchArgs, { detached: true, stdio: 'ignore' });
+    child.once('spawn', () => {
+      child.unref();
+      app.exit(0);
+    });
+    child.once('error', () => app.exit(0));
+  } else {
+    app.relaunch({ args: relaunchArgs });
+    app.exit(0);
+  }
 }
 
 const path = require('path');
