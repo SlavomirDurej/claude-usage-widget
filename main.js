@@ -506,6 +506,11 @@ function createMainWindow() {
   mainWindow.on('move', () => {
     if (positionSaveTimer) clearTimeout(positionSaveTimer);
     positionSaveTimer = setTimeout(() => {
+      // The window can be destroyed between the move and this debounce
+      // firing (close/quit within 300ms of a drag) — getBounds on a
+      // destroyed window throws. The sibling 'resize' handler already
+      // guards; 'move' was missed.
+      if (!mainWindow || mainWindow.isDestroyed()) return;
       const position = mainWindow.getBounds();
       store.set('windowPosition', { x: position.x, y: position.y });
     }, 300);
