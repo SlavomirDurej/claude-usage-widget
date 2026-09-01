@@ -1207,6 +1207,7 @@ function createTray() {
     });
   } catch (error) {
     console.error('Failed to create tray:', error);
+    logger.debugLog(`Failed to create tray: ${error.message}`);
   }
 }
 
@@ -1235,12 +1236,14 @@ function destroyTrayIcons() {
       }
     } catch (error) {
       console.error('Failed to clear tray icon:', error);
+      logger.debugLog(`Failed to clear tray icon: ${error.message}`);
     }
 
     try {
       tray.destroy();
     } catch (error) {
       console.error('Failed to destroy tray icon:', error);
+      logger.debugLog(`Failed to destroy tray icon: ${error.message}`);
     }
   }
 }
@@ -1358,6 +1361,11 @@ function updateTrayIcon(usageData) {
     }
   } catch (error) {
     console.error('Failed to update tray icons:', error);
+    // console.error only reaches devtools, which the stress-test runs don't
+    // have open - mirror it into the debug log so an icon-draw failure
+    // during the corruption investigation actually leaves a trace instead
+    // of a clean-looking log next to a corrupted icon.
+    logger.debugLog(`Failed to update tray icons: ${error.message}`);
   }
 }
 
@@ -1607,7 +1615,12 @@ ipcMain.handle('get-settings', () => {
   };
 });
 
-ipcMain.handle('save-settings', (event, settings) => {
+ipcMain.handle('save-settings', async (event, settings) => {
+  // Full snapshot on every save, not just a "settings saved" marker - lets
+  // consecutive debug-log entries be diffed by hand to see exactly what
+  // changed between one Done click and the next.
+  logger.debugLog(`Settings saved: ${JSON.stringify(settings)}`);
+
   const supportsLoginItems = process.platform !== 'linux';
   const autoStart = supportsLoginItems ? settings.autoStart : false;
 
@@ -1653,6 +1666,17 @@ ipcMain.handle('save-settings', (event, settings) => {
     }
     mainWindow.setAlwaysOnTop(settings.alwaysOnTop, 'floating');
   }
+
+  // Experimental, tied to the taskbar-icon-corruption investigation: setSkipTaskbar
+  // above and the tray destroy/recreate below are two separate native Windows
+  // shell icon-registration calls, previously fired back-to-back in the same
+  // tick with zero gap. Theory is Explorer's icon cache can't always keep up
+  // with two rapid consecutive calls. This delay is a test of that theory, not
+  // a confirmed fix - remove if the corruption still reproduces with it in place.
+  const TRAY_SETTINGS_APPLY_DELAY_MS = 200;
+  logger.debugLog(`Pausing ${TRAY_SETTINGS_APPLY_DELAY_MS}ms between setSkipTaskbar and tray icon update`);
+  await new Promise((resolve) => setTimeout(resolve, TRAY_SETTINGS_APPLY_DELAY_MS));
+  logger.debugLog('Pause complete, proceeding to tray icon update');
 
   const latestUsageData = store.get('latestUsageData');
 
