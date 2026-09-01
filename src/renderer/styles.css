@@ -1017,6 +1017,15 @@ body.theme-light .settings-disclaimer {
     flex-shrink: 0;
 }
 
+/* Tray stats / taskbar stats / hide-from-taskbar labels are longer than the
+   default 90px column allows without wrapping - widen just this group
+   instead of the shared default, so unrelated rows (Theme, Warn at, etc.)
+   are untouched. 150px sized against "Show System Tray stats", the longest
+   of the three. */
+.settings-col-wide-label .settings-row-label {
+    width: 150px;
+}
+
 .settings-col-disabled .settings-row-label {
     color: #787888;
 }
