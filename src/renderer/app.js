@@ -358,38 +358,15 @@ function setupEventListeners() {
         });
     });
 
-    // Prevent accidental app hiding: bidirectional coupling between Hide from Taskbar and Show Tray Stats
-    // If user enables "Hide from Taskbar", automatically enable "Show Tray Stats" (ensures tray icon is visible)
-    elements.minimizeToTrayToggle.addEventListener('change', () => {
-        if (elements.minimizeToTrayToggle.checked && !elements.showTrayStatsToggle.checked) {
-            elements.showTrayStatsToggle.checked = true;
-        }
-        if (!elements.minimizeToTrayToggle.checked) {
-            // Turning "Hide from taskbar" back off should not silently
-            // re-enable Taskbar Stats too — the user has to opt back in
-            // manually, not have it come back on its own.
-            taskbarStatsPreference = false;
-        }
-        syncTaskbarStatsAvailability();
-    });
-
-    // If user disables "Show Tray Stats", automatically disable "Hide from Taskbar" (prevents app from being completely hidden)
-    elements.showTrayStatsToggle.addEventListener('change', () => {
-        if (!elements.showTrayStatsToggle.checked && elements.minimizeToTrayToggle.checked) {
-            elements.minimizeToTrayToggle.checked = false;
-        }
-        syncTaskbarStatsAvailability();
-    });
-
-    // Remember the user's own preference so it can be restored when the taskbar
-    // button (and with it the stats icon) becomes available again.
+    // Show tray stats / Show taskbar stats / Hide from taskbar are a single
+    // three-way relationship. All three listeners funnel into one function
+    // (applyTrayTaskbarRules, defined below) instead of each toggle reaching
+    // into the others directly - one place decides the resulting state.
+    elements.showTrayStatsToggle.addEventListener('change', () => applyTrayTaskbarRules('tray'));
     if (elements.showTaskbarStatsToggle) {
-        elements.showTaskbarStatsToggle.addEventListener('change', () => {
-            if (!elements.showTaskbarStatsToggle.disabled) {
-                taskbarStatsPreference = elements.showTaskbarStatsToggle.checked;
-            }
-        });
+        elements.showTaskbarStatsToggle.addEventListener('change', () => applyTrayTaskbarRules('taskbar'));
     }
+    elements.minimizeToTrayToggle.addEventListener('change', () => applyTrayTaskbarRules('hide'));
 
     // Listen for refresh requests from tray
     window.electronAPI.onRefreshUsage(async () => {
@@ -452,11 +429,11 @@ function setupEventListeners() {
         }
     });
 
-    // Compact mode toggle in normal settings panel — deferred to Done click
+    // Compact mode toggle in normal settings panel — deferred to Save click
 
-    // Compact mode toggle in compact settings panel — just updates the checkbox, Done applies it
+    // Compact mode toggle in compact settings panel — just updates the checkbox, Save applies it
     elements.compactModeToggleCompact.addEventListener('change', () => {
-        // No immediate action — Done button reads this value and applies
+        // No immediate action — Save button reads this value and applies
     });
 
     // Organization selector — change triggers immediate save and refresh
@@ -1849,22 +1826,64 @@ let dangerThreshold = 90;
 let taskbarStatsPreference = false;
 
 /**
- * Taskbar stats need a taskbar button to draw on, so the toggle is forced off
- * and disabled while "Hide from taskbar" is on — same lock pattern as the
- * Organization column and the Linux "Launch at startup" row.
+ * Single decision point for the three-way relationship between "Show tray
+ * stats", "Show taskbar stats", and "Hide from taskbar". Every toggle's
+ * change listener calls this with which one it is, and loadSettings() calls
+ * it with 'init' after applying stored values. Nothing outside this function
+ * reaches into another toggle's .checked directly - one area of code, one
+ * outcome, instead of the old two-listener version where Hide-from-taskbar
+ * and Show-tray-stats each carried their own copy of the same decision.
+ *
+ * Rules:
+ *  - Show tray stats and Show taskbar stats are mutually exclusive - only
+ *    one can be on at a time.
+ *  - Hide from taskbar requires Show tray stats on (it's the only way back
+ *    in once the window is hidden) and forces Show taskbar stats off and
+ *    disabled (there's no taskbar button left to draw stats on).
+ *
+ * @param {'tray'|'taskbar'|'hide'|'init'} source - which toggle the user
+ *   just changed, or 'init' to reconcile disabled/hint display on load
+ *   without treating any toggle as a fresh user action.
  */
-function syncTaskbarStatsAvailability() {
-    if (!elements.showTaskbarStatsToggle) return;
+function applyTrayTaskbarRules(source) {
+    const trayEl = elements.showTrayStatsToggle;
+    const taskbarEl = elements.showTaskbarStatsToggle;
+    const hideEl = elements.minimizeToTrayToggle;
+    if (!trayEl || !taskbarEl || !hideEl) return;
 
-    const hiddenFromTaskbar = elements.minimizeToTrayToggle.checked;
-    elements.showTaskbarStatsToggle.disabled = hiddenFromTaskbar;
-    elements.showTaskbarStatsToggle.checked = hiddenFromTaskbar ? false : taskbarStatsPreference;
+    if (source === 'tray') {
+        if (trayEl.checked && taskbarEl.checked) {
+            taskbarEl.checked = false;
+            taskbarStatsPreference = false;
+        }
+        if (!trayEl.checked && hideEl.checked) {
+            // No tray icon left as a way back in - can't stay hidden.
+            hideEl.checked = false;
+        }
+    } else if (source === 'taskbar') {
+        taskbarStatsPreference = taskbarEl.checked;
+        if (taskbarEl.checked) {
+            trayEl.checked = false;
+        }
+    } else if (source === 'hide') {
+        if (hideEl.checked) {
+            trayEl.checked = true;
+            if (taskbarEl.checked) taskbarStatsPreference = false;
+            taskbarEl.checked = false;
+        } else {
+            // Restore the user's own taskbar-stats preference now that a
+            // taskbar presence exists again, respecting the tray/taskbar
+            // exclusivity above.
+            taskbarEl.checked = taskbarStatsPreference && !trayEl.checked;
+        }
+    }
 
+    taskbarEl.disabled = hideEl.checked;
     if (elements.taskbarStatsCol) {
-        elements.taskbarStatsCol.classList.toggle('settings-col-disabled', hiddenFromTaskbar);
+        elements.taskbarStatsCol.classList.toggle('settings-col-disabled', hideEl.checked);
     }
     if (elements.taskbarStatsHint) {
-        elements.taskbarStatsHint.style.display = hiddenFromTaskbar ? 'inline' : 'none';
+        elements.taskbarStatsHint.style.display = hideEl.checked ? 'inline' : 'none';
     }
 }
 
@@ -1897,7 +1916,8 @@ async function loadSettings() {
     }
     if (elements.showTaskbarStatsToggle) {
         taskbarStatsPreference = settings.showTaskbarStats === true;
-        syncTaskbarStatsAvailability();
+        elements.showTaskbarStatsToggle.checked = taskbarStatsPreference && !elements.minimizeToTrayToggle.checked;
+        applyTrayTaskbarRules('init');
     }
     elements.warnThreshold.value = settings.warnThreshold;
     elements.dangerThreshold.value = settings.dangerThreshold;

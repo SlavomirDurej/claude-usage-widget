@@ -247,7 +247,7 @@
                 <div class="settings-content">
                     <div class="settings-header">
                         <span class="settings-title">Settings</span>
-                        <button class="done-settings-btn" id="closeSettingsBtn" title="Done">Done</button>
+                        <button class="done-settings-btn" id="closeSettingsBtn" title="Save">Save</button>
                     </div>
 
                     <div class="settings-disclaimer">
@@ -265,10 +265,10 @@
                                 </label>
                                 <span class="settings-row-hint" id="autoStartHint" style="display: none;">Not supported on Linux</span>
                             </div>
-                            <div class="settings-col">
-                                <span class="settings-row-label" id="trayLabel">Hide from taskbar</span>
+                            <div class="settings-col settings-col-wide-label">
+                                <span class="settings-row-label">Show tray stats</span>
                                 <label class="toggle-switch">
-                                    <input type="checkbox" id="minimizeToTrayToggle">
+                                    <input type="checkbox" id="showTrayStatsToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
@@ -283,16 +283,17 @@
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
-                            <div class="settings-col">
-                                <span class="settings-row-label">Show tray stats</span>
+                            <div class="settings-col settings-col-wide-label" id="taskbarStatsCol">
+                                <span class="settings-row-label">Show taskbar stats</span>
                                 <label class="toggle-switch">
-                                    <input type="checkbox" id="showTrayStatsToggle">
+                                    <input type="checkbox" id="showTaskbarStatsToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
+                                <span class="settings-row-hint" id="taskbarStatsHint" style="display: none;">Hidden from taskbar</span>
                             </div>
                         </div>
 
-                        <!-- Row 3: compact mode + taskbar stats -->
+                        <!-- Row 3: compact mode + hide from taskbar -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Compact mode</span>
@@ -301,13 +302,12 @@
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
-                            <div class="settings-col" id="taskbarStatsCol">
-                                <span class="settings-row-label">Show taskbar stats</span>
+                            <div class="settings-col settings-col-wide-label">
+                                <span class="settings-row-label" id="trayLabel">Hide from taskbar</span>
                                 <label class="toggle-switch">
-                                    <input type="checkbox" id="showTaskbarStatsToggle">
+                                    <input type="checkbox" id="minimizeToTrayToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
-                                <span class="settings-row-hint" id="taskbarStatsHint" style="display: none;">Hidden from taskbar</span>
                             </div>
                         </div>
 
@@ -423,7 +423,7 @@
                 <div class="settings-content">
                     <div class="settings-header">
                         <span class="settings-title">Settings</span>
-                        <button class="done-settings-btn" id="closeCompactSettingsBtn" title="Done">Done</button>
+                        <button class="done-settings-btn" id="closeCompactSettingsBtn" title="Save">Save</button>
                     </div>
                     <div class="compact-settings-body">
                         <div class="settings-col">
