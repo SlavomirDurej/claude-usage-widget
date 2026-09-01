@@ -470,6 +470,7 @@ function captureWindowVisibilityOnExit() {
   } else if (mainWindow.isMinimized()) {
     state = 'minimized';
   }
+  logger.debugLog(`Capturing exit visibility: isVisible=${mainWindow.isVisible()}, isMinimized=${mainWindow.isMinimized()} -> ${state}`);
   store.set('state.windowVisibilityOnExit', state);
 }
 
@@ -582,6 +583,7 @@ function createMainWindow() {
   // covers the case where the window was minimized before a monitor change
   // and is now restoring to coordinates that no longer exist.
   mainWindow.on('restore', () => {
+    logger.debugLog('mainWindow restore event fired');
     showMainWindowSmart();
   });
 
@@ -592,6 +594,7 @@ function createMainWindow() {
   // instead of needing a focus -> minimize -> restore cycle first. Cheap
   // check, only acts when actually off-screen, so no effect on normal use.
   mainWindow.on('focus', () => {
+    logger.debugLog('mainWindow focus event fired');
     showMainWindowSmart();
   });
 
