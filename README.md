@@ -290,6 +290,8 @@ Special thanks to these contributors who have improved the widget:
 - [@bastionecho](https://github.com/bastionecho) - Single-icon split-panel taskbar usage design, pixel-drawing implementation, and settings-panel dynamic sizing, directly adapted (PR #115)
 - [@adihebbalae](https://github.com/adihebbalae) - Identified the silent-logout bug in session key decryption fallback (PR #110)
 - [@mtspl](https://github.com/mtspl) - Rate-limit retry/backoff and auto-refresh jitter design (PR #114)
+- [@GTRows](https://github.com/GTRows) - CI prerelease auto-detection and macOS cert signing fix
+- [@Geozstevenzz](https://github.com/Geozstevenzz) - Login screen sizing fix (issue #71)
 
 ---
 
