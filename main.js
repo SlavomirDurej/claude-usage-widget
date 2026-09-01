@@ -2275,6 +2275,19 @@ app.whenReady().then(async () => {
   // (hidden window spawns, window manager shortcuts, alt-tab, etc.)
   setInterval(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
+      // Skip entirely while hidden or minimized - there's no visible z-order
+      // to defend on a window that isn't on screen, and isAlwaysOnTop() was
+      // found to read false in both states (same isVisible()-goes-false-
+      // while-minimized quirk that broke the exit-visibility capture), so
+      // without this guard the interval would keep calling setAlwaysOnTop()
+      // every 5s on a minimized/hidden window - repeated native icon-
+      // adjacent calls being exactly the pattern already correlated with
+      // taskbar icon corruption elsewhere in this codebase. Confirmed via
+      // debug log: a window restored minimized at startup drifted back to
+      // isVisible=true/isMinimized=false within ~80s with no user input,
+      // matching this interval's cadence.
+      if (!mainWindow.isVisible() || mainWindow.isMinimized()) return;
+
       const alwaysOnTopSetting = store.get('settings.alwaysOnTop', true);
       // Only actually call setAlwaysOnTop() when it's genuinely needed (the
       // window has actually been knocked off top), not unconditionally every
