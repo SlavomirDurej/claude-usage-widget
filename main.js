@@ -46,6 +46,7 @@ const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
 const { normalizeUsageLimits } = require('./src/normalize-usage-limits');
+const { recoverBounds, clearsVisibilityThreshold } = require('./src/window-bounds');
 const { detectActiveCreditSpend } = require('./src/detect-active-credit-spend');
 
 const GITHUB_OWNER = 'SlavomirDurej';
@@ -425,6 +426,13 @@ function isPositionOnScreen(x, y, width, height) {
   });
 }
 
+// Displays ordered primary-first — recoverBounds treats the first entry as
+// the primary for its recenter fallback.
+function orderedDisplays() {
+  const primary = screen.getPrimaryDisplay();
+  return [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)];
+}
+
 // Centered position on the primary display's work area, for the given window size.
 function getCenteredPosition(width, height) {
   const area = screen.getPrimaryDisplay().workArea;
@@ -441,8 +449,12 @@ function getCenteredPosition(width, height) {
 function isMainWindowShownOnScreen() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (!mainWindow.isVisible() || mainWindow.isMinimized()) return false;
+  // Same 80x32 threshold recoverBounds uses, so the tray toggle and every
+  // recovery path agree on what "shown" means — an any-pixel-overlap check
+  // here called a sliver-visible window "shown" and hid it on tray click.
   const bounds = mainWindow.getBounds();
-  return isPositionOnScreen(bounds.x, bounds.y, bounds.width, bounds.height);
+  return orderedDisplays().some((display) =>
+    clearsVisibilityThreshold(bounds, display.workArea || display.bounds, 80, 32));
 }
 
 // Implicit/automatic triggers (tray left-click, taskbar left-click/restore,
@@ -461,11 +473,15 @@ function showMainWindowSmart() {
     return;
   }
   const bounds = mainWindow.getBounds();
-  if (!isPositionOnScreen(bounds.x, bounds.y, bounds.width, bounds.height)) {
-    const { x, y } = getCenteredPosition(bounds.width, bounds.height);
-    debugLog('[Window] Recentering off-screen window from', bounds, 'to', { x, y });
-    mainWindow.setPosition(x, y);
-    store.set('windowPosition', { x, y });
+  const recovered = recoverBounds(bounds, orderedDisplays(), {
+    fallbackWidth: WIDGET_WIDTH,
+    fallbackHeight: WIDGET_HEIGHT
+  });
+  if (recovered.x !== bounds.x || recovered.y !== bounds.y
+      || recovered.width !== bounds.width || recovered.height !== bounds.height) {
+    debugLog('[Window] Recovering window from', bounds, 'to', recovered);
+    mainWindow.setBounds(recovered);
+    store.set('windowPosition', { x: recovered.x, y: recovered.y });
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -474,9 +490,16 @@ function showMainWindowSmart() {
 
 function createMainWindow() {
   let savedPosition = store.get('windowPosition');
-  if (savedPosition && !isPositionOnScreen(savedPosition.x, savedPosition.y, WIDGET_WIDTH, WIDGET_HEIGHT)) {
-    debugLog('[Window] Saved position', savedPosition, 'is off-screen on current display setup; centering instead');
-    savedPosition = null;
+  if (savedPosition) {
+    const recovered = recoverBounds(
+      { x: savedPosition.x, y: savedPosition.y, width: WIDGET_WIDTH, height: WIDGET_HEIGHT },
+      orderedDisplays(),
+      { fallbackWidth: WIDGET_WIDTH, fallbackHeight: WIDGET_HEIGHT }
+    );
+    if (recovered.x !== savedPosition.x || recovered.y !== savedPosition.y) {
+      debugLog('[Window] Saved position', savedPosition, 'recovered to', recovered);
+    }
+    savedPosition = { x: recovered.x, y: recovered.y };
   }
   const windowOptions = {
     width: WIDGET_WIDTH,
