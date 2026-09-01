@@ -1062,16 +1062,32 @@ function generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dange
 }
 
 /**
+ * Tracks what's currently drawn on mainWindow's taskbar icon so repeated
+ * calls that would produce the same result skip the native setIcon() call
+ * entirely, instead of hammering it every poll (every 15s in the stress
+ * test config) regardless of whether the displayed percentages actually
+ * changed. Same class of fix as the isAlwaysOnTop()-check-before-reasserting
+ * guard already applied to the periodic always-on-top interval, which
+ * measurably correlated with mainWindow's taskbar icon degrading over time.
+ * 'default' means resetTaskbarIcon() drew the plain app icon; any other
+ * value is the key string built from the last-drawn stats icon's inputs.
+ */
+let currentTaskbarIconKey = null;
+
+/**
  * Restore the bundled application icon on the taskbar button
  */
 function resetTaskbarIcon() {
   if (process.platform !== 'win32') return;
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (currentTaskbarIconKey === 'default') return;
 
   try {
     mainWindow.setIcon(path.join(__dirname, 'assets/icon.ico'));
+    currentTaskbarIconKey = 'default';
   } catch (error) {
     console.error('Failed to reset taskbar icon:', error);
+    logger.debugLog(`Failed to reset taskbar icon: ${error.message}`);
   }
 }
 
@@ -1101,10 +1117,17 @@ function updateTaskbarIcon(usageData) {
   const sessionPercent = usageData?.five_hour?.utilization || 0;
   const weeklyPercent = usageData?.seven_day?.utilization || 0;
 
+  // Thresholds affect the drawn color, so they're part of the key too -
+  // otherwise a threshold change with unchanged percentages would be missed.
+  const iconKey = `${sessionPercent}|${weeklyPercent}|${warnThreshold}|${dangerThreshold}`;
+  if (iconKey === currentTaskbarIconKey) return;
+
   try {
     mainWindow.setIcon(generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dangerThreshold));
+    currentTaskbarIconKey = iconKey;
   } catch (error) {
     console.error('Failed to update taskbar icon:', error);
+    logger.debugLog(`Failed to update taskbar icon: ${error.message}`);
   }
 }
 
