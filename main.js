@@ -1671,8 +1671,23 @@ ipcMain.handle('save-settings', async (event, settings) => {
   // above and the tray destroy/recreate below are two separate native Windows
   // shell icon-registration calls, previously fired back-to-back in the same
   // tick with zero gap. Theory is Explorer's icon cache can't always keep up
-  // with two rapid consecutive calls. This delay is a test of that theory, not
-  // a confirmed fix - remove if the corruption still reproduces with it in place.
+  // with two rapid consecutive calls.
+  //
+  // Status as of Sep 2026: kept in indefinitely. It's cheap (unnoticeable to
+  // the user) and correlates with clean test runs so far, but "correlates
+  // with one clean run" is not confirmation - we do not know this is the
+  // actual fix, and haven't done a controlled before/after test (repro
+  // without it, then confirm clean with it) the way other fixes from this
+  // same investigation were validated. Do not read its presence as proof
+  // the root cause is understood.
+  //
+  // The real test is time: if the corruption stays gone for an extended
+  // period (months) with this in place, that's supporting evidence, not
+  // proof, since plenty of other changes landed in the same window. The
+  // only way to actually confirm causation is to deliberately remove this
+  // later and watch for recurrence - if corruption comes back, this was
+  // load-bearing; if it doesn't, something else fixed it and this can stay
+  // removed. Don't strip it out casually without doing that comparison.
   const TRAY_SETTINGS_APPLY_DELAY_MS = 200;
   logger.debugLog(`Pausing ${TRAY_SETTINGS_APPLY_DELAY_MS}ms between setSkipTaskbar and tray icon update`);
   await new Promise((resolve) => setTimeout(resolve, TRAY_SETTINGS_APPLY_DELAY_MS));
