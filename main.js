@@ -409,37 +409,11 @@ async function setSessionCookie(sessionKey) {
   debugLog('sessionKey cookie set in Electron session');
 }
 
-// Returns true if a rect at (x, y) with the given width/height overlaps
-// at least one currently connected display's work area. Used to recover
-// from saved window positions left over from a different monitor setup
-// (e.g. switching from an ultrawide to a laptop-only display).
-function isPositionOnScreen(x, y, width, height) {
-  const rect = { x, y, width, height };
-  return screen.getAllDisplays().some((display) => {
-    const area = display.workArea;
-    return (
-      rect.x < area.x + area.width &&
-      rect.x + rect.width > area.x &&
-      rect.y < area.y + area.height &&
-      rect.y + rect.height > area.y
-    );
-  });
-}
-
 // Displays ordered primary-first — recoverBounds treats the first entry as
 // the primary for its recenter fallback.
 function orderedDisplays() {
   const primary = screen.getPrimaryDisplay();
   return [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)];
-}
-
-// Centered position on the primary display's work area, for the given window size.
-function getCenteredPosition(width, height) {
-  const area = screen.getPrimaryDisplay().workArea;
-  return {
-    x: Math.round(area.x + (area.width - width) / 2),
-    y: Math.round(area.y + (area.height - height) / 2)
-  };
 }
 
 // True only if the window is actually shown AND within some display's bounds.
