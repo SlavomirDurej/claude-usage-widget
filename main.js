@@ -1120,10 +1120,14 @@ function updateTaskbarIcon(usageData) {
   // Thresholds affect the drawn color, so they're part of the key too -
   // otherwise a threshold change with unchanged percentages would be missed.
   const iconKey = `${sessionPercent}|${weeklyPercent}|${warnThreshold}|${dangerThreshold}`;
-  if (iconKey === currentTaskbarIconKey) return;
+  if (iconKey === currentTaskbarIconKey) {
+    logger.debugLog(`Skipping taskbar icon redraw, unchanged: ${iconKey}`);
+    return;
+  }
 
   try {
     mainWindow.setIcon(generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dangerThreshold));
+    logger.debugLog(`Redrew taskbar icon: ${currentTaskbarIconKey ?? '(none)'} -> ${iconKey}`);
     currentTaskbarIconKey = iconKey;
   } catch (error) {
     console.error('Failed to update taskbar icon:', error);
