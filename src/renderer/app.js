@@ -1885,6 +1885,17 @@ function applyTrayTaskbarRules(source) {
     if (elements.taskbarStatsHint) {
         elements.taskbarStatsHint.style.display = hideEl.checked ? 'inline' : 'none';
     }
+
+    // The "Hidden from Taskbar" hint wraps to two lines, which changes the
+    // panel's natural content height - measureSettingsHeight() only runs
+    // once when Settings is first opened, so re-run it here whenever the
+    // hint's visibility (and therefore layout height) could have just
+    // changed while the panel is already open. No-op while Settings is
+    // closed, so 'init' (called during loadSettings on app start, before
+    // the overlay has ever been shown) doesn't resize the main window.
+    if (elements.settingsOverlay && elements.settingsOverlay.style.display === 'flex') {
+        window.electronAPI.resizeWindow(measureSettingsHeight());
+    }
 }
 
 async function loadSettings() {
