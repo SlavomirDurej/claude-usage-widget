@@ -2233,7 +2233,13 @@ app.whenReady().then(async () => {
     mainWindow.hide();
   } else if (lastVisibility === 'minimized') {
     logger.debugLog('Restoring startup state: minimized');
-    mainWindow.show();
+    // No show() here on purpose - it fired a native 'focus' event, which
+    // triggers showMainWindowSmart(), which triggered a 'restore' event,
+    // which called showMainWindowSmart() again and undid the minimize
+    // entirely (confirmed via debug log: the very next exit capture on
+    // that session read back isVisible=true, isMinimized=false). The
+    // window already exists (created with show: false) - minimize()
+    // alone is enough to give it a minimized taskbar presence.
     mainWindow.minimize();
   } else {
     if (lastVisibility === 'hidden') {
