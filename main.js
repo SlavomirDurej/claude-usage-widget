@@ -1207,6 +1207,7 @@ function createTray() {
     });
   } catch (error) {
     console.error('Failed to create tray:', error);
+    logger.debugLog(`Failed to create tray: ${error.message}`);
   }
 }
 
@@ -1235,12 +1236,14 @@ function destroyTrayIcons() {
       }
     } catch (error) {
       console.error('Failed to clear tray icon:', error);
+      logger.debugLog(`Failed to clear tray icon: ${error.message}`);
     }
 
     try {
       tray.destroy();
     } catch (error) {
       console.error('Failed to destroy tray icon:', error);
+      logger.debugLog(`Failed to destroy tray icon: ${error.message}`);
     }
   }
 }
@@ -1358,6 +1361,11 @@ function updateTrayIcon(usageData) {
     }
   } catch (error) {
     console.error('Failed to update tray icons:', error);
+    // console.error only reaches devtools, which the stress-test runs don't
+    // have open - mirror it into the debug log so an icon-draw failure
+    // during the corruption investigation actually leaves a trace instead
+    // of a clean-looking log next to a corrupted icon.
+    logger.debugLog(`Failed to update tray icons: ${error.message}`);
   }
 }
 
