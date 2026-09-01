@@ -465,10 +465,15 @@ function isMainWindowShownOnScreen() {
 function captureWindowVisibilityOnExit() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   let state = 'normal';
-  if (!mainWindow.isVisible()) {
-    state = 'hidden';
-  } else if (mainWindow.isMinimized()) {
+  // isMinimized() must be checked before isVisible() - on Windows, a
+  // minimized window reports isVisible() === false too (confirmed via
+  // debug log: isVisible=false, isMinimized=true simultaneously), so
+  // checking isVisible() first misclassified every minimized exit as
+  // 'hidden' instead of 'minimized'.
+  if (mainWindow.isMinimized()) {
     state = 'minimized';
+  } else if (!mainWindow.isVisible()) {
+    state = 'hidden';
   }
   logger.debugLog(`Capturing exit visibility: isVisible=${mainWindow.isVisible()}, isMinimized=${mainWindow.isMinimized()} -> ${state}`);
   store.set('state.windowVisibilityOnExit', state);
