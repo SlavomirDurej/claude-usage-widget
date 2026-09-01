@@ -450,6 +450,29 @@ function isMainWindowShownOnScreen() {
     clearsVisibilityThreshold(bounds, display.workArea || display.bounds, 80, 32));
 }
 
+// Captures whether the window is hidden, OS-minimized, or normally shown
+// right before the app actually exits, so the next launch can restore that
+// same state instead of always starting fully visible. Stored outside the
+// settings.* namespace since this isn't a user preference — it's internal
+// runtime state, same category as updateBannerVisible.
+//
+// There is no single quit path to hook this into: the X-close handler,
+// the tray "Exit" menu item, and a genuine app.quit() (OS shutdown/logoff)
+// each force-destroy independently by design (see the comments on each).
+// This function is called from the top of the two that need it explicitly;
+// the X-close path only ever fires while the window is visible in the
+// first place, so it always captures 'normal' regardless.
+function captureWindowVisibilityOnExit() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  let state = 'normal';
+  if (!mainWindow.isVisible()) {
+    state = 'hidden';
+  } else if (mainWindow.isMinimized()) {
+    state = 'minimized';
+  }
+  store.set('state.windowVisibilityOnExit', state);
+}
+
 // Implicit/automatic triggers (tray left-click, taskbar left-click/restore,
 // app activate, "Show Widget" menu item). Re-validates the window's current
 // position against connected displays first and only moves it if it's
@@ -502,6 +525,11 @@ function createMainWindow() {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: false,
+    // Startup visibility is decided explicitly after the window and tray
+    // exist (see the whenReady sequence) rather than shown automatically -
+    // that's what makes restoring the hidden/minimized/normal state from
+    // the last exit possible.
+    show: false,
     icon: path.join(__dirname, process.platform === 'darwin' ? 'assets/icon.icns' : process.platform === 'linux' ? 'assets/logo.png' : 'assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
@@ -537,6 +565,7 @@ function createMainWindow() {
   // outright now. Minimize (the app's own − button) is the dedicated way to
   // tuck it away while keeping a tray/taskbar icon as the way back in.
   mainWindow.on('close', (event) => {
+    captureWindowVisibilityOnExit();
     if (isQuitting) return;
     event.preventDefault();
     isQuitting = true;
@@ -1176,6 +1205,7 @@ function createTray() {
           // Bypasses the normal close/before-quit/window-all-closed event
           // cascade entirely rather than relying on it to resolve correctly —
           // force-destroy everything directly, then hard-exit the process.
+          captureWindowVisibilityOnExit();
           isQuitting = true;
           destroyTrayIcons();
           if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2177,6 +2207,33 @@ app.whenReady().then(async () => {
   if (store.get('settings.showTrayStats', false)) {
     createTray();
   }
+
+  // Restore the window to whatever state it was last exited in, instead of
+  // always starting fully visible. Only trusted when there's a live tray
+  // icon this run to actually verify - if tray creation failed or is
+  // disabled, always fall back to showing rather than risk a window the
+  // user has no way back into. See captureWindowVisibilityOnExit() for
+  // where this gets written.
+  const lastVisibility = store.get('state.windowVisibilityOnExit', 'normal');
+  const minimizeToTray = store.get('settings.minimizeToTray', false);
+  const showTrayStats = store.get('settings.showTrayStats', false);
+  if (lastVisibility === 'hidden' && minimizeToTray && showTrayStats && hasTrayIcon()) {
+    logger.debugLog('Restoring startup state: hidden (tray verified)');
+    // Leave the window unshown - hide() isn't needed on a window created
+    // with show: false, but calling it keeps isVisible()/state tracking
+    // consistent with the hidden-via-minimize path during the session.
+    mainWindow.hide();
+  } else if (lastVisibility === 'minimized') {
+    logger.debugLog('Restoring startup state: minimized');
+    mainWindow.show();
+    mainWindow.minimize();
+  } else {
+    if (lastVisibility === 'hidden') {
+      logger.debugLog('Startup state was hidden but tray unavailable this run - showing window instead');
+    }
+    mainWindow.show();
+  }
+
   // Show the last known usage on the taskbar immediately instead of waiting
   // for the first refresh to come back.
   updateTaskbarIcon(store.get('latestUsageData'));
@@ -2190,7 +2247,6 @@ app.whenReady().then(async () => {
   }
 
   // Apply persisted settings
-  const minimizeToTray = store.get('settings.minimizeToTray', false);
   const alwaysOnTop = store.get('settings.alwaysOnTop', true);
   if (mainWindow) {
     if (process.platform === 'darwin') {
