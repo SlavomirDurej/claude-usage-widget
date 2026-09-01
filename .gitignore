@@ -45,6 +45,7 @@ test-version.js
 AUMID_ELECTRON_VERSION_TESTLOG.md
 FUTURE_TESTING_AUTOMATION.md
 icon-corruption-test.ps1
+LOGGING_TEST_PLAN.md
 
 # Code signing credentials (NEVER COMMIT THESE)
 developer_id.key

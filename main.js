@@ -66,6 +66,7 @@ const LOGIN_ALLOWED_DOMAINS = [
 // session, cookies, and settings. Must be set before anything reads app.getPath('userData').
 const fs = require('fs');
 const os = require('os');
+const logger = require('./src/logger');
 const {
   loadWhitelist,
   saveWhitelist,
@@ -79,6 +80,13 @@ const {
 // machine-level trust decision, not account data, so it lives in one place
 // shared by every --profile instance rather than being duplicated per profile.
 const baseUserDataPath = app.getPath('userData');
+
+// Computed early (only depends on argv/env) so it's available to logger.init()
+// below, before Store or anything else in the startup sequence exists.
+// NOTE: the flag is --debug-log, not --debug — Electron/Node intercept --debug
+// as a reserved legacy Node debugger switch (node --debug) and hard-reject it
+// before argv ever reaches this file, regardless of what our code checks for.
+const DEBUG = process.env.DEBUG_LOG === '1' || process.argv.includes('--debug-log');
 
 const profileArg = process.argv.find(a => a.startsWith('--profile='));
 let profileName = null;
@@ -202,6 +210,9 @@ if (process.argv.includes('--reset-aumid')) {
 // entry. This suffix is stable per profile name, not regenerated per launch —
 // each profile just gets its own permanent, separate identity, unless overridden
 // by a prior --reset-aumid run (see above).
+// Hoisted so it's available to the startup log line below, regardless of platform.
+let aumidForLog = 'n/a (non-Windows)';
+
 if (process.platform === 'win32') {
   let aumid = profileName
     ? `com.claudeusage.widget.profile-${profileName}`
@@ -227,7 +238,14 @@ if (process.platform === 'win32') {
   console.log(`[AUMID] Using AppUserModelID: ${aumid}`);
 
   app.setAppUserModelId(aumid);
+  aumidForLog = aumid;
 }
+
+// Baseline lifecycle logging starts here - identity (profile, userData path,
+// AUMID) is fully resolved at this point. Always on; verbosity beyond this
+// startup line is gated by DEBUG (see logger.debugLog / debugLog()).
+logger.init(app.getPath('userData'), { debug: DEBUG });
+logger.log(`App start - profile: ${profileName || 'default'}, userData: ${app.getPath('userData')}, AUMID: ${aumidForLog}, debug: ${DEBUG}`);
 
 // Migration: Handle old encrypted config files from v1.7.0 and earlier
 // Must happen BEFORE creating Store instance to prevent parse errors.
@@ -264,11 +282,12 @@ if (!profileArg) {
 // Non-sensitive settings storage (no encryption needed)
 const store = new Store();
 
-// Debug mode: set DEBUG_LOG=1 env var or pass --debug flag to see verbose logs.
-// Regular users will only see critical errors in the console.
-const DEBUG = process.env.DEBUG_LOG === '1' || process.argv.includes('--debug');
+// Debug mode: set DEBUG_LOG=1 env var or pass --debug-log flag to see verbose logs.
+// Regular users will only see critical errors in the console. DEBUG itself is
+// computed earlier (before logger.init()) - see the comment near baseUserDataPath.
 function debugLog(...args) {
   if (DEBUG) console.log('[Debug]', ...args);
+  logger.debugLog(args.map(String).join(' '));
 }
 
 const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -1113,6 +1132,8 @@ function createTray() {
     sessionTray = new Tray(staticIconPath);
     sessionTray.setToolTip('Session Usage');
 
+    logger.log('Tray created (session + weekly icons)');
+
     const contextMenu = Menu.buildFromTemplate([
       {
         label: 'Show Widget',
@@ -1192,8 +1213,12 @@ function createTray() {
 function destroyTrayIcons() {
   // Centralized tray cleanup keeps Linux appindicator hosts from showing stale icons.
   const trays = [sessionTray, weeklyTray];
+  const hadLiveTray = trays.some((t) => t && !t.isDestroyed());
   sessionTray = null;
   weeklyTray = null;
+  // Only log a real teardown, not every no-op call (this is called defensively
+  // from several paths even when there's nothing to destroy).
+  if (hadLiveTray) logger.log('Tray destroyed');
 
   for (const tray of trays) {
     if (!tray || tray.isDestroyed()) continue;
@@ -1415,7 +1440,7 @@ ipcMain.handle('delete-credentials', async () => {
 
 // Validate a sessionKey by fetching org ID via hidden BrowserWindow
 ipcMain.handle('validate-session-key', async (event, sessionKey) => {
-  debugLog('Validating session key:', sessionKey.substring(0, 20) + '...');
+  debugLog(`Validating session key (length: ${sessionKey ? sessionKey.length : 0})`);
   try {
     // Set the cookie in Electron's session first
     await setSessionCookie(sessionKey);
@@ -1985,6 +2010,20 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   if (usageResult.status === 'rejected') {
     const error = usageResult.reason;
     debugLog('API request failed:', error.message);
+    // Baseline-level (not gated by DEBUG) so a plain, non-debug soak test still
+    // captures fetch failures - this is the actual signal for correlating fetch
+    // errors with the taskbar/AUMID corruption investigation. Some error types
+    // (InvalidJSON/CloudflareBlocked/CloudflareChallenge/UnexpectedHTML/RateLimited)
+    // embed up to 200 chars of raw page text in their message (this is what
+    // produced the "Salt Lake City / Cloudflare" page-diagram text seen in an
+    // earlier console dump) - strip those to just the category. Other types
+    // (LoadFailed's Chromium error code, timeouts, SessionExpired) carry no page
+    // text and stay in full, since e.g. the QUIC error code is exactly the kind
+    // of detail worth keeping.
+    const PAGE_TEXT_ERROR_TYPES = ['InvalidJSON', 'CloudflareBlocked', 'CloudflareChallenge', 'UnexpectedHTML', 'RateLimited'];
+    const errorType = error.message.split(':')[0];
+    const fetchFailureSummary = PAGE_TEXT_ERROR_TYPES.includes(errorType) ? errorType : error.message;
+    logger.log(`Fetch failed: ${fetchFailureSummary}`);
     const isBlocked = error.message.startsWith('CloudflareBlocked')
       || error.message.startsWith('CloudflareChallenge')
       || error.message.startsWith('UnexpectedHTML');
@@ -2198,6 +2237,7 @@ app.on('window-all-closed', () => {
 // quit apart from a click on the close button to just minimize.
 app.on('before-quit', () => {
   isQuitting = true;
+  logger.log('App quitting');
 });
 
 app.on('activate', () => {
