@@ -36,6 +36,9 @@ yarn-error.log*
 .cache/
 .temp/
 
+# Local dev scratch directory
+.scratch/
+
 # Local dev scratch files
 msg.txt
 RELEASE_NOTES_DRAFT.md
