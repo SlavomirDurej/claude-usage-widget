@@ -1,48 +1,44 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage, screen } = require('electron');
 
-// Linux/Wayland: force Xwayland compatibility mode so the second system tray
-// icon (weekly) actually renders (Issue #119). Electron's Tray backend only
-// gives the *first* Tray() instance in a process real StatusNotifierItem
-// (SNI) support; every subsequent instance falls back to the older
-// GtkStatusIcon protocol (documented at
-// https://www.electronjs.org/docs/latest/api/tray). GtkStatusIcon has no
-// working implementation under native Wayland — it depends on X11 window-
-// server semantics Wayland doesn't provide — so it silently fails to appear.
-// Electron 38 changed the *default* from Xwayland compat mode to native
-// Wayland, which is what exposed this: earlier versions quietly ran every
-// session through Xwayland regardless of the actual session type, so the
-// GtkStatusIcon fallback always had something to attach to. This isn't
-// undoing a regression in the traditional sense — the fallback's Wayland gap
-// always existed, Electron 38 just stopped papering over it by default.
-//
-// Implemented as a one-time self-relaunch, NOT app.commandLine.appendSwitch().
-// appendSwitch() was tried first and shipped briefly — it's technically the
-// first executable statement in this file, but that's still too late:
-// Chromium's native Ozone/platform-backend selection happens in C++ before
-// Electron hands control to this script at all, so appendSwitch() landed in
-// a broken half-X11/half-Wayland hybrid state (confirmed live: XGetWindow-
-// Attributes failures, zero tray icons, worse than the original bug) rather
-// than genuinely forcing Xwayland. A real command-line argument, present in
-// argv from process start, IS parsed early enough — hence relaunching once
-// with the flag baked into the new process's actual argv. The argv guard
-// below prevents relaunching forever once that flag is already present.
-// Confirmed working live on a real Fedora 44 KDE Plasma Wayland session:
-// clean single relaunch, both tray icons render, busctl confirms both
-// registered.
-//
-// Only on Linux/Wayland — X11 sessions, Windows, and macOS are unaffected
-// and untouched. Confirmed via manual Electron version bisection: 37.10.3
-// unaffected, 38.8.6+ affected; this relaunch-with-flag approach confirmed
-// to resolve it on 41.x (the range this app currently installs, per
-// package.json's ^41.10.1). Not yet effective as of Electron 43.x in ad hoc
-// testing — root cause for that not yet identified, and out of scope today
-// since npm's caret range on our pin can't install past 41.x without a
-// deliberate package.json change. If a future Electron bump changes the
-// installed major version, re-verify the second tray icon manually on
-// Linux/Wayland before shipping.
-if (process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland' && !process.argv.includes('--ozone-platform=x11')) {
-  app.relaunch({ args: process.argv.slice(1).concat(['--ozone-platform=x11']) });
-  app.exit(0);
+// Linux/Wayland: force Xwayland compat mode so the second system tray icon
+// (weekly) renders — Electron only gives the *first* Tray() instance real
+// StatusNotifierItem support; later ones fall back to GtkStatusIcon, which
+// doesn't work under native Wayland (Issue #119). Done via a one-time
+// self-relaunch with a real argv flag, not app.commandLine.appendSwitch()
+// — Chromium picks its Ozone backend before appendSwitch() would take
+// effect. Linux/Wayland only; X11, Windows, and macOS are untouched.
+relaunchUnderXwaylandIfNeeded();
+
+function relaunchUnderXwaylandIfNeeded() {
+  const flag = '--ozone-platform=x11';
+  if (process.platform !== 'linux' || process.env.XDG_SESSION_TYPE !== 'wayland' || process.argv.includes(flag)) {
+    return;
+  }
+
+  const relaunchArgs = process.argv.slice(1).concat([flag]);
+
+  if (process.env.APPIMAGE) {
+    // app.relaunch() can't be used here: it spawns an intermediate
+    // "relauncher" helper off the *current* (mounted) binary, which blocks
+    // waiting for this process to exit — but this process exiting is what
+    // unmounts the binary the helper is still running from, killing it
+    // before it ever launches the real target. Spawning process.env.APPIMAGE
+    // (the original .appimage file) ourselves sidesteps that entirely; it
+    // gets its own independent mount. Trade-off: this process's own AppImage
+    // mount can't fully unmount until the relaunched instance exits (it
+    // inherits a few fds into it), so a harmless idle process+mount lingers
+    // for the session's lifetime and cleans up on quit.
+    const { spawn } = require('child_process');
+    const child = spawn(process.env.APPIMAGE, relaunchArgs, { detached: true, stdio: 'ignore' });
+    child.once('spawn', () => {
+      child.unref();
+      app.exit(0);
+    });
+    child.once('error', () => app.exit(0));
+  } else {
+    app.relaunch({ args: relaunchArgs });
+    app.exit(0);
+  }
 }
 
 const path = require('path');
@@ -50,6 +46,7 @@ const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
 const { normalizeUsageLimits } = require('./src/normalize-usage-limits');
+const { recoverBounds, clearsVisibilityThreshold } = require('./src/window-bounds');
 const { detectActiveCreditSpend } = require('./src/detect-active-credit-spend');
 
 const GITHUB_OWNER = 'SlavomirDurej';
@@ -429,6 +426,13 @@ function isPositionOnScreen(x, y, width, height) {
   });
 }
 
+// Displays ordered primary-first — recoverBounds treats the first entry as
+// the primary for its recenter fallback.
+function orderedDisplays() {
+  const primary = screen.getPrimaryDisplay();
+  return [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)];
+}
+
 // Centered position on the primary display's work area, for the given window size.
 function getCenteredPosition(width, height) {
   const area = screen.getPrimaryDisplay().workArea;
@@ -445,8 +449,12 @@ function getCenteredPosition(width, height) {
 function isMainWindowShownOnScreen() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (!mainWindow.isVisible() || mainWindow.isMinimized()) return false;
+  // Same 80x32 threshold recoverBounds uses, so the tray toggle and every
+  // recovery path agree on what "shown" means — an any-pixel-overlap check
+  // here called a sliver-visible window "shown" and hid it on tray click.
   const bounds = mainWindow.getBounds();
-  return isPositionOnScreen(bounds.x, bounds.y, bounds.width, bounds.height);
+  return orderedDisplays().some((display) =>
+    clearsVisibilityThreshold(bounds, display.workArea || display.bounds, 80, 32));
 }
 
 // Implicit/automatic triggers (tray left-click, taskbar left-click/restore,
@@ -465,11 +473,15 @@ function showMainWindowSmart() {
     return;
   }
   const bounds = mainWindow.getBounds();
-  if (!isPositionOnScreen(bounds.x, bounds.y, bounds.width, bounds.height)) {
-    const { x, y } = getCenteredPosition(bounds.width, bounds.height);
-    debugLog('[Window] Recentering off-screen window from', bounds, 'to', { x, y });
-    mainWindow.setPosition(x, y);
-    store.set('windowPosition', { x, y });
+  const recovered = recoverBounds(bounds, orderedDisplays(), {
+    fallbackWidth: WIDGET_WIDTH,
+    fallbackHeight: WIDGET_HEIGHT
+  });
+  if (recovered.x !== bounds.x || recovered.y !== bounds.y
+      || recovered.width !== bounds.width || recovered.height !== bounds.height) {
+    debugLog('[Window] Recovering window from', bounds, 'to', recovered);
+    mainWindow.setBounds(recovered);
+    store.set('windowPosition', { x: recovered.x, y: recovered.y });
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -478,9 +490,16 @@ function showMainWindowSmart() {
 
 function createMainWindow() {
   let savedPosition = store.get('windowPosition');
-  if (savedPosition && !isPositionOnScreen(savedPosition.x, savedPosition.y, WIDGET_WIDTH, WIDGET_HEIGHT)) {
-    debugLog('[Window] Saved position', savedPosition, 'is off-screen on current display setup; centering instead');
-    savedPosition = null;
+  if (savedPosition) {
+    const recovered = recoverBounds(
+      { x: savedPosition.x, y: savedPosition.y, width: WIDGET_WIDTH, height: WIDGET_HEIGHT },
+      orderedDisplays(),
+      { fallbackWidth: WIDGET_WIDTH, fallbackHeight: WIDGET_HEIGHT }
+    );
+    if (recovered.x !== savedPosition.x || recovered.y !== savedPosition.y) {
+      debugLog('[Window] Saved position', savedPosition, 'recovered to', recovered);
+    }
+    savedPosition = { x: recovered.x, y: recovered.y };
   }
   const windowOptions = {
     width: WIDGET_WIDTH,
@@ -510,6 +529,11 @@ function createMainWindow() {
   mainWindow.on('move', () => {
     if (positionSaveTimer) clearTimeout(positionSaveTimer);
     positionSaveTimer = setTimeout(() => {
+      // The window can be destroyed between the move and this debounce
+      // firing (close/quit within 300ms of a drag) — getBounds on a
+      // destroyed window throws. The sibling 'resize' handler already
+      // guards; 'move' was missed.
+      if (!mainWindow || mainWindow.isDestroyed()) return;
       const position = mainWindow.getBounds();
       store.set('windowPosition', { x: position.x, y: position.y });
     }, 300);
