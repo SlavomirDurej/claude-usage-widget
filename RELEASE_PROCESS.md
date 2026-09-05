@@ -57,34 +57,41 @@ Only after RC testing passes and enough changes have accumulated on `develop` to
    git merge --no-ff develop -m "release: merge develop into main for vX.Y.Z"
    ```
 
-2. **Bump version in `package.json`** to `X.Y.Z` (remove `-dev` suffix).
+2. **Delete `STAGED_CHANGES.md` from `main`.** Its purpose is tracking what's accumulating *toward* a release on `develop` — once merged, "staged" no longer means anything, and its content already lives permanently in `RELEASE_NOTES_1.7.X.md` (see step 7 below). Leaving it on `main` is a stale, redundant duplicate of information that belongs in the release notes instead.
+   ```
+   git rm STAGED_CHANGES.md
+   git commit -m "chore: remove STAGED_CHANGES.md from main (content now in RELEASE_NOTES_1.7.X.md)"
+   ```
+   This is expected to merge cleanly on every future release with no conflict, *because* of step 6 below: syncing `develop` with `main` right after each release pulls this deletion back into `develop`'s own history before `develop` recreates the file fresh. By the next release, the deletion is a shared ancestor between both branches, so `git merge develop → main` re-adds the file cleanly rather than hitting a modify/delete conflict.
 
-3. **Push `main` and verify CI passes** (no tag yet):
+3. **Bump version in `package.json`** to `X.Y.Z` (remove `-dev` suffix).
+
+4. **Push `main` and verify CI passes** (no tag yet):
    ```
    git push origin main
    ```
 
-4. **Once CI is green, create and push the annotated release tag:**
+5. **Once CI is green, create and push the annotated release tag:**
    ```
    git tag -a vX.Y.Z -m "vX.Y.Z"
    git push origin vX.Y.Z
    ```
 
-5. **Tag push triggers the three platform builds.** Monitor Actions.
+6. **Tag push triggers the three platform builds.** Monitor Actions.
 
-6. **After release, bump `develop` to the next cycle's RC version:**
+7. **After release, bump `develop` to the next cycle's RC version:**
    ```
    git checkout develop
-   git merge main --no-edit   # sync develop with main (fast-uri fixes, docs, etc.)
+   git merge main --no-edit   # sync develop with main (fast-uri fixes, docs, and the STAGED_CHANGES.md deletion from step 2 above)
    # Update package.json version to X.Y.(Z+1)-rc.1 (no -dev placeholder — we cut straight to rc.1)
    git add package.json package-lock.json
    git commit -m "chore: start vX.Y.(Z+1)-rc.1 cycle on develop"
    git push origin develop
    ```
 
-7. **Reset `STAGED_CHANGES.md`** back to its empty template now that its entries live permanently in `RELEASE_NOTES_1.7.X.md`.
+8. **Recreate `STAGED_CHANGES.md`** on `develop` with its empty template — step 7's merge just deleted it (inherited from `main`), and its previous entries live permanently in `RELEASE_NOTES_1.7.X.md`.
 
-8. **Clean up superseded RC releases and tags.** Claude should proactively remind you of this step at formal release time — don't wait to be asked:
+9. **Clean up superseded RC releases and tags.** Claude should proactively remind you of this step at formal release time — don't wait to be asked:
    - Confirm the new stable release built and published successfully first.
    - You delete each superseded `vX.Y.Z-rc.N` release in the GitHub UI (Claude doesn't have delete access there).
    - Claude then deletes the matching tags: `git push origin :refs/tags/vX.Y.Z-rc.N && git tag -d vX.Y.Z-rc.N` for each.
@@ -101,4 +108,4 @@ Only after RC testing passes and enough changes have accumulated on `develop` to
 - **Orphaned drafts:** If a release job misfires, delete the GitHub release before deleting the tag — otherwise orphaned drafts persist.
 - **BOM-free writes:** Always use `[System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))` when writing files via PowerShell — never `Out-File -Encoding utf8`.
 - **`.blockmap` files are required, not cleanup candidates.** They're `electron-updater`'s differential-update data — without them, an update falls back to a full re-download for that version's upgrade path instead of a smaller delta.
-- **`STAGED_CHANGES.md`** accumulates entries per branch. Clear it after each formal release.
+- **`STAGED_CHANGES.md`** accumulates entries per branch on `develop` only. It's deleted from `main` at every formal release (step 2) since its content is redundant with `RELEASE_NOTES_1.7.X.md` once shipped, then recreated empty on `develop` (step 8) for the next cycle.
