@@ -601,53 +601,155 @@ const EXTRA_ROW_CONFIG = {
 const CREDIT_EXPIRY_WARN_DAYS = 21;
 const CREDIT_EXPIRY_DANGER_DAYS = 7;
 
-// Builds the credit-balance row shown beneath Monthly Spend.
-// Promo/paid split renders only when purchased credits exist (money at risk);
-// the expiry chip renders only when the next expiry is within the warn window.
-function buildCreditsRow(value) {
-    const row = document.createElement('div');
-    row.className = 'usage-section credits-row';
+// Builds the self-contained Monthly Spend + balance card. Deliberately not
+// built from the shared .usage-section grid markup used by session/weekly/
+// model rows below — that fixed-column grid fought every attempt to add a
+// second line (reset date, disclaimer, balance) without overflowing into
+// neighboring columns. See chat discussion Sep 2026 for the two rounds of
+// layout bugs that came from patching the grid instead of leaving it.
+function buildSpendCard(value, isPaused) {
+    const card = document.createElement('div');
+    card.className = 'spend-card';
+
+    // Header: label and reset date on one line, opposite ends
+    const header = document.createElement('div');
+    header.className = 'spend-card-header';
 
     const label = document.createElement('span');
-    label.className = 'usage-label credits-label';
-    // Invisible clone of the spend row's ON/OFF badge so "Credits" aligns
-    // with "Monthly Spend" regardless of badge width
-    if (value.is_enabled === true || value.is_enabled === false) {
-        const spacer = document.createElement('span');
-        spacer.className = 'extra-status badge-spacer';
-        spacer.textContent = value.is_enabled ? 'ON' : 'OFF';
-        label.appendChild(spacer);
+    label.className = 'spend-card-label';
+    if (value.is_enabled === true) {
+        const statusTag = document.createElement('span');
+        statusTag.className = 'extra-status on';
+        statusTag.textContent = 'ON';
+        label.appendChild(statusTag);
+    } else if (value.is_enabled === false) {
+        const statusTag = document.createElement('span');
+        statusTag.className = 'extra-status off';
+        statusTag.textContent = 'OFF';
+        label.appendChild(statusTag);
     }
-    label.appendChild(document.createTextNode(' Credits'));
-    row.appendChild(label);
+    label.appendChild(document.createTextNode(' Monthly spend'));
+    header.appendChild(label);
 
-    const amount = document.createElement('span');
-    amount.className = 'credits-amount';
-    amount.textContent = formatCurrency(value.balance_cents, value.currency);
-    row.appendChild(amount);
+    const rowSettings = window._cachedSettings || {};
+    const resetSpan = document.createElement('span');
+    resetSpan.className = 'spend-card-reset';
+    resetSpan.textContent = `Resets ${formatResetsAt(getSpendCapResetIso(), true, rowSettings.timeFormat || '12h', rowSettings.weeklyDateFormat || 'date')}`;
+    header.appendChild(resetSpan);
+    card.appendChild(header);
 
-    if (typeof value.paid_cents === 'number' && value.paid_cents > 0) {
-        const split = document.createElement('span');
-        split.className = 'credits-split';
-        split.textContent = `promo ${formatCurrency(value.promo_cents || 0, value.currency)} / paid ${formatCurrency(value.paid_cents, value.currency)}`;
-        row.appendChild(split);
+    // Bar — a neutral consumption indicator, not styled to look like a bill
+    const barWrap = document.createElement('div');
+    barWrap.className = 'spend-card-bar-wrap';
+    const progressBar = document.createElement('div');
+    progressBar.className = 'progress-bar spend-progress-bar';
+    const progressFill = document.createElement('div');
+    progressFill.className = 'progress-fill extra';
+    const utilization = value.utilization || 0;
+    progressFill.style.width = `${Math.min(utilization, 100)}%`;
+
+    // Paused overrides warning/danger — a muted bar regardless of utilization
+    // is the whole point: it must not look like there's still room just
+    // because the cap hasn't been reached.
+    if (isPaused) {
+        progressFill.classList.add('paused');
+    } else if (utilization >= dangerThreshold) {
+        progressFill.classList.add('danger');
+    } else if (utilization >= warnThreshold) {
+        progressFill.classList.add('warning');
     }
+    progressBar.appendChild(progressFill);
 
-    if (value.next_expires_at && typeof value.next_expiry_cents === 'number' && value.next_expiry_cents > 0) {
-        const daysLeft = Math.ceil((new Date(value.next_expires_at).getTime() - Date.now()) / 86400000);
-        if (daysLeft >= 0 && daysLeft <= CREDIT_EXPIRY_WARN_DAYS) {
-            const chip = document.createElement('span');
-            chip.className = 'credits-chip' + (daysLeft <= CREDIT_EXPIRY_DANGER_DAYS ? ' danger' : '');
-            const when = daysLeft <= CREDIT_EXPIRY_DANGER_DAYS
-                ? `in ${daysLeft}d`
-                : new Date(value.next_expires_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            chip.textContent = `${formatCurrency(value.next_expiry_cents, value.currency)} expires ${when}`;
-            chip.title = `Expires ${new Date(value.next_expires_at).toLocaleDateString()}`;
-            row.appendChild(chip);
+    // Funding-stops-here marker: the real ceiling is min(cap, balance), not
+    // just the cap. Only draw it when balance actually constrains before the
+    // cap would (markerPct < 100) — otherwise it's noise.
+    if (typeof value.balance_cents === 'number' && value.limit_cents) {
+        const markerPct = Math.min(100, (value.balance_cents / value.limit_cents) * 100);
+        if (markerPct < 100) {
+            const marker = document.createElement('div');
+            marker.className = 'funding-stop-marker';
+            marker.style.left = `${markerPct}%`;
+            marker.title = 'Funding stops here — credit balance runs out before the cap';
+            progressBar.appendChild(marker);
+        }
+    }
+    barWrap.appendChild(progressBar);
+    card.appendChild(barWrap);
+
+    // Caption: disambiguates usage from a bill, carries the paused reason
+    const caption = document.createElement('div');
+    caption.className = 'spend-card-caption';
+    if (isPaused) {
+        caption.classList.add('spend-card-caption-paused');
+        let unusedStr = '';
+        if (value.limit_cents != null && value.used_cents != null) {
+            unusedStr = ` ${formatCurrency(value.limit_cents - value.used_cents, value.currency)} of cap unused, but balance is $0.`;
+        }
+        caption.textContent = `Paused — add funds to keep going.${unusedStr}`;
+    } else if (value.used_cents != null && value.limit_cents != null) {
+        let limitStr = formatCurrency(value.limit_cents, value.currency);
+        if (value.limit_cents % 100 === 0) limitStr = limitStr.replace('.00', '');
+        const usedStr = formatCurrency(value.used_cents, value.currency);
+        const coveredNote = (typeof value.balance_cents === 'number' && value.balance_cents > 0)
+            ? ' · covered by your credit balance, not charged'
+            : '';
+        caption.textContent = `${usedStr} used of ${limitStr} cap${coveredNote}`;
+    } else {
+        caption.textContent = `${Math.round(utilization)}% used`;
+    }
+    card.appendChild(caption);
+
+    // Balance section — only when we actually have prepaid data
+    if (value.balance_cents != null) {
+        const divider = document.createElement('div');
+        divider.className = 'spend-card-divider';
+        card.appendChild(divider);
+
+        const balanceRow = document.createElement('div');
+        balanceRow.className = 'spend-card-header spend-card-balance-row';
+
+        const balanceLeft = document.createElement('div');
+        balanceLeft.className = 'spend-card-balance-left';
+        const balanceLabel = document.createElement('span');
+        balanceLabel.className = 'spend-card-label';
+        balanceLabel.textContent = 'Available balance';
+        const balanceAmount = document.createElement('div');
+        balanceAmount.className = 'spend-card-balance-amount';
+        balanceAmount.textContent = formatCurrency(value.balance_cents, value.currency);
+        balanceLeft.appendChild(balanceLabel);
+        balanceLeft.appendChild(balanceAmount);
+        balanceRow.appendChild(balanceLeft);
+
+        if (isPaused) {
+            const buyLink = document.createElement('span');
+            buyLink.className = 'spend-card-buy-link';
+            buyLink.textContent = 'Buy usage credits';
+            buyLink.addEventListener('click', () => window.electronAPI.openExternal('https://claude.ai/settings/usage'));
+            balanceRow.appendChild(buyLink);
+        } else if (value.next_expires_at && typeof value.next_expiry_cents === 'number' && value.next_expiry_cents > 0) {
+            const daysLeft = Math.ceil((new Date(value.next_expires_at).getTime() - Date.now()) / 86400000);
+            if (daysLeft >= 0 && daysLeft <= CREDIT_EXPIRY_WARN_DAYS) {
+                const chip = document.createElement('span');
+                chip.className = 'credits-chip' + (daysLeft <= CREDIT_EXPIRY_DANGER_DAYS ? ' danger' : '');
+                const when = daysLeft <= CREDIT_EXPIRY_DANGER_DAYS
+                    ? `in ${daysLeft}d`
+                    : new Date(value.next_expires_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                chip.textContent = `${formatCurrency(value.next_expiry_cents, value.currency)} expires ${when}`;
+                chip.title = `Expires ${new Date(value.next_expires_at).toLocaleDateString()}`;
+                balanceRow.appendChild(chip);
+            }
+        }
+        card.appendChild(balanceRow);
+
+        if (typeof value.paid_cents === 'number' && value.paid_cents > 0) {
+            const split = document.createElement('div');
+            split.className = 'credits-split spend-card-split';
+            split.textContent = `promo ${formatCurrency(value.promo_cents || 0, value.currency)} / paid ${formatCurrency(value.paid_cents, value.currency)}`;
+            card.appendChild(split);
         }
     }
 
-    return row;
+    return card;
 }
 
 function buildExtraRows(data) {
@@ -676,6 +778,19 @@ function buildExtraRows(data) {
         const hasBalance = key === 'extra_usage' && value && value.balance_cents != null;
         if (!hasUtilization && !hasBalance) continue;
 
+        // extra_usage renders as its own self-contained card (bar + balance),
+        // not through the shared grid-based row markup below — the fixed-
+        // column .usage-section grid fought every attempt to add a second
+        // line. See chat discussion Sep 2026.
+        if (key === 'extra_usage') {
+            const isPaused = value.is_enabled === true
+                && typeof value.balance_cents === 'number'
+                && value.balance_cents <= 0;
+            elements.extraRows.appendChild(buildSpendCard(value, isPaused));
+            count++;
+            continue;
+        }
+
         const utilization = value.utilization || 0;
         const resetsAt = value.resets_at;
         const colorClass = config.color;
@@ -683,65 +798,12 @@ function buildExtraRows(data) {
         const row = document.createElement('div');
         row.className = 'usage-section';
 
-        // Build row using DOM methods (no innerHTML)
         const label = document.createElement('span');
         label.className = 'usage-label';
-        
-        if (key === 'extra_usage') {
-            // Extra usage: ON/OFF indicator goes next to label
-            if (value.is_enabled === true) {
-                const statusTag = document.createElement('span');
-                statusTag.className = 'extra-status on';
-                statusTag.textContent = 'ON';
-                label.appendChild(statusTag);
-            } else if (value.is_enabled === false) {
-                const statusTag = document.createElement('span');
-                statusTag.className = 'extra-status off';
-                statusTag.textContent = 'OFF';
-                label.appendChild(statusTag);
-            }
-            label.appendChild(document.createTextNode(' Monthly Spend'));
-        } else {
-            label.textContent = config.label;
-        }
+        label.textContent = config.label;
         row.appendChild(label);
 
-        if (key === 'extra_usage') {
-            // Spend row uses flex (like the credits row): label | stretching bar | right-flush $ text
-            row.classList.add('spend-row');
-            const barGroup = document.createElement('div');
-            barGroup.className = 'usage-bar-group spend-bar-group';
-            const progressBar = document.createElement('div');
-            progressBar.className = 'progress-bar';
-            const progressFill = document.createElement('div');
-            progressFill.className = `progress-fill ${colorClass}`;
-            progressFill.style.width = `${Math.min(utilization, 100)}%`;
-
-            // Apply warning/danger thresholds to extra usage bar
-            if (utilization >= dangerThreshold) {
-                progressFill.classList.add('danger');
-            } else if (utilization >= warnThreshold) {
-                progressFill.classList.add('warning');
-            }
-            
-            progressBar.appendChild(progressFill);
-            barGroup.appendChild(progressBar);
-            row.appendChild(barGroup);
-
-            // Dollar text lives in the (now empty) timer+resets columns so the
-            // bar keeps the full bar-column width like the session/weekly rows
-            const spendText = document.createElement('span');
-            if (value.used_cents != null && value.limit_cents != null) {
-                spendText.className = 'usage-percentage extra-spending spend-cap-text';
-                let limitStr = formatCurrency(value.limit_cents, value.currency);
-                if (value.limit_cents % 100 === 0) limitStr = limitStr.replace('.00', '');
-                spendText.textContent = `${formatCurrency(value.used_cents, value.currency)}/${limitStr} cap`;
-            } else {
-                spendText.className = 'usage-percentage spend-cap-text';
-                spendText.textContent = `${Math.round(utilization)}%`;
-            }
-            row.appendChild(spendText);
-        } else {
+        {
             const totalMinutes = key.includes('seven_day') ? 7 * 24 * 60 : 5 * 60;
 
             const barGroup = document.createElement('div');
@@ -811,12 +873,6 @@ function buildExtraRows(data) {
 
         elements.extraRows.appendChild(row);
         count++;
-
-        // Credit balance gets its own row beneath Monthly Spend
-        if (key === 'extra_usage' && value.balance_cents != null) {
-            elements.extraRows.appendChild(buildCreditsRow(value));
-            count++;
-        }
     }
 
     // Hide toggle if no extra rows
@@ -855,13 +911,28 @@ function resizeWidget(bannerVisible) {
         ? bannerVisible
         : elements.updateBanner.style.display !== 'none';
     const bannerOffset = hasBanner ? BANNER_HEIGHT : 0;
+    // Measures actual rendered height per child instead of assuming a flat
+    // WIDGET_ROW_HEIGHT for all of them. That assumption held while every
+    // extra row was a uniform ~30px line, but the spend card is taller and
+    // variable (paused state, expiry chip, promo/paid split all add lines).
+    // See chat discussion Sep 2026.
     const extraCount = elements.extraRows.children.length;
-    const expandedOffset = isExpanded && extraCount > 0
-        ? EXPAND_OVERHEAD + (extraCount * WIDGET_ROW_HEIGHT)
-        : 0;
+    let expandedOffset = 0;
+    if (isExpanded && extraCount > 0) {
+        let childrenHeight = 0;
+        for (const child of elements.extraRows.children) {
+            childrenHeight += child.getBoundingClientRect().height || WIDGET_ROW_HEIGHT;
+        }
+        expandedOffset = EXPAND_OVERHEAD + childrenHeight;
+    }
     const graphOffset = graphVisible ? GRAPH_HEIGHT : 0;
     const totalHeight = WIDGET_HEIGHT_COLLAPSED + expandedOffset + graphOffset + bannerOffset;
-    window.electronAPI.resizeWindow(totalHeight);
+    // setContentSize (behind resizeWindow, main.js) is a native Electron
+    // binding requiring integer pixels. getBoundingClientRect().height above
+    // returns sub-pixel floats, which setContentSize rejects outright with a
+    // "conversion failure" crash — this broke the panel entirely on restart.
+    // See chat discussion Sep 2026.
+    window.electronAPI.resizeWindow(Math.round(totalHeight));
 }
 
 function normalizeUsageData(data) {
@@ -1289,6 +1360,16 @@ function updateProgressBar(progressElement, percentageElement, value, isWeekly =
 // Format reset date for the "Resets At" column
 // Session: shows time like "3:59 PM" or "15:59"
 // Weekly: shows date like "Mar 13", "Fri Mar 13", or "Fri Mar 13 3:59 PM"
+// Computes the ISO timestamp for the prepaid/spend-cap monthly reset (1st of
+// next calendar month, local midnight). Not returned by any API field — see
+// chat discussion Sep 2026 confirming usage/spend endpoints have no resets_at
+// for the cap cycle, unlike five_hour/seven_day/limits[].
+function getSpendCapResetIso() {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return next.toISOString();
+}
+
 function formatResetsAt(resetsAt, isWeekly, timeFormat, weeklyDateFormat) {
     if (!resetsAt) return '—';
     const date = new Date(resetsAt);
