@@ -778,27 +778,130 @@ body.theme-light .graph-btn.active {
     opacity: 0.8;
 }
 
-/* Monthly Spend row — flex layout (like the credits row below it):
-   fixed label, bar stretches to fill, dollar text flush right.
-   No dead columns; bar and text always meet with a single gap. */
-.usage-section.spend-row {
+/* Monthly Spend + balance section. No background fill and no border —
+   .expand-section above already provides the hairline separator from the
+   session/weekly rows, so a second border-top here just doubled that line.
+   See chat discussion Sep 2026. */
+.spend-card {
+    margin: 4px 6px 6px 6px;
+    padding: 6px 6px 4px 6px;
+}
+
+.spend-card-header {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
 }
 
-.spend-row .usage-label {
-    flex: 0 0 115px;
-}
-
-.spend-bar-group {
-    flex: 1;
-    min-width: 0;
-}
-
-.spend-cap-text {
+.spend-card-label {
+    color: #a0a0a0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     white-space: nowrap;
+}
+
+body.theme-light .spend-card-label {
+    color: #606080;
+}
+
+.spend-card-reset {
+    color: #a0a0a0;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.spend-card-bar-wrap {
+    margin: 6px 0 4px 0;
+}
+
+.spend-card-bar-wrap .progress-bar {
+    height: 6px;
+}
+
+.spend-card-caption {
+    color: #808080;
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.spend-card-caption-paused {
+    color: #e24b4a;
+    font-weight: 600;
+}
+
+.spend-card-divider {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    margin: 8px 0;
+}
+
+body.theme-light .spend-card-divider {
+    border-top-color: rgba(0, 0, 0, 0.08);
+}
+
+.spend-card-balance-row {
+    align-items: center;
+}
+
+.spend-card-balance-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.spend-card-balance-amount {
+    color: #e0e0e0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+body.theme-light .spend-card-balance-amount {
+    color: #1a1a2e;
+}
+
+.spend-card-buy-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8b5cf6;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.spend-card-buy-link:hover {
+    text-decoration: underline;
+}
+
+.spend-card-split {
+    margin-top: 4px;
+}
+
+.spend-progress-bar {
+    position: relative;
+}
+
+.funding-stop-marker {
+    position: absolute;
+    top: -3px;
+    width: 2px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 1px;
+}
+
+body.theme-light .funding-stop-marker {
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.progress-fill.paused {
+    background: rgba(255, 255, 255, 0.35);
+    box-shadow: none;
+}
+
+body.theme-light .progress-fill.paused {
+    background: rgba(0, 0, 0, 0.28);
 }
 
 .timer-text.extra-balance-label {
@@ -838,33 +941,6 @@ body.theme-light .graph-btn.active {
     border: 1px solid rgba(160, 160, 160, 0.3);
 }
 
-/* Credits row — free-form flex line beneath Monthly Spend.
-   Overrides the 5-column grid; label width matches the grid's
-   first column (115px) + gap so "Credits" aligns with other labels. */
-.usage-section.credits-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-}
-
-.credits-row .credits-label {
-    flex: 0 0 115px;
-    margin-right: 4px;
-}
-
-/* Invisible ON/OFF badge clone — keeps "Credits" aligned with "Monthly Spend" */
-.extra-status.badge-spacer {
-    visibility: hidden;
-}
-
-.credits-amount {
-    font-size: 11px;
-    font-weight: 600;
-    color: #c0c0c8;
-    white-space: nowrap;
-}
-
 .credits-split {
     font-size: 10px;
     color: #808080;
@@ -876,11 +952,11 @@ body.theme-light .graph-btn.active {
 
 .credits-chip {
     margin-left: auto;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 5px 12px;
+    border-radius: 6px;
     background: rgba(239, 159, 39, 0.15);
     color: #ef9f27;
     border: 1px solid rgba(239, 159, 39, 0.4);

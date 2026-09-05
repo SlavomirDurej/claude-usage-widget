@@ -1588,7 +1588,18 @@ ipcMain.on('close-window', () => {
 
 ipcMain.on('resize-window', (event, height) => {
   if (mainWindow) {
-    mainWindow.setContentSize(WIDGET_WIDTH, height);
+    // setContentSize is a native binding requiring integer pixels — a stray
+    // float or NaN from any renderer call site throws an uncaught exception
+    // in the main process, which crashes the entire app (not just the
+    // renderer). Guarding here protects every current and future caller in
+    // one place, not just whichever call site happened to send bad input
+    // this time. See chat discussion Sep 2026.
+    const safeHeight = Math.round(Number(height));
+    if (!Number.isFinite(safeHeight) || safeHeight <= 0) {
+      logger.debugLog(`resize-window: rejected invalid height ${height}`);
+      return;
+    }
+    mainWindow.setContentSize(WIDGET_WIDTH, safeHeight);
   }
 });
 
