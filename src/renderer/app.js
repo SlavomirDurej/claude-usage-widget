@@ -97,6 +97,7 @@ const elements = {
     refreshInterval: document.getElementById('refreshInterval'),
     orgSelector: document.getElementById('orgSelector'),
     orgSelectorCol: document.getElementById('orgSelectorCol'),
+    titleBarLabel: document.getElementById('titleBarLabel'),
 
     updateBanner: document.getElementById('updateBanner'),
     updateBannerText: document.getElementById('updateBannerText'),
@@ -170,6 +171,12 @@ async function handleOrgChange() {
 // Initialize
 async function init() {
     setupEventListeners();
+
+    const profileName = await window.electronAPI.getProfileName();
+    if (profileName && elements.titleBarLabel) {
+        elements.titleBarLabel.textContent = `Claude Usage — ${profileName}`;
+    }
+
     credentials = await window.electronAPI.getCredentials();
 
     // Apply saved theme and load thresholds immediately
