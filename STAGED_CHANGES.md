@@ -154,7 +154,7 @@ Choose **Start session at** in Settings to send a tiny Haiku 4.5 prompt at a cho
 
   Tested by @williamvdev on a real Fedora 44 KDE Plasma Wayland session, both from the prebuilt `1.7.7-rc.1` AppImage and a from-source rebuild; confirmed against Electron 41.10.1's actual relauncher source, and via `coredumpctl`/mount-timing capture. PR merged.
 
-  **REMINDER: add @williamvdev to README Contributors before v1.7.7 ships.**
+  **Added to README Contributors.**
 
 - **Settings reorder, consolidated toggle logic, dynamic-resize fix, and Done→Save rename (Discussion #127):** the discussion asked for the app to start minimized to the system tray. Working through the fix surfaced that the three related toggles — Show tray stats, Show taskbar stats, Hide from taskbar — had confusing wording, a shared 90px label column that caused the taskbar-stats hint text to wrap, and their interaction rules split across two separate `change` listeners in `app.js` that each independently reached into the others' `.checked` state.
 
@@ -217,7 +217,7 @@ Choose **Start session at** in Settings to send a tiny Haiku 4.5 prompt at a cho
 
   Reviewed before merging: `contextIsolation`/`nodeIntegration` settings untouched, the new IPC call takes no arguments from the renderer (pure read of a value the main process already computed) and writes only to `textContent`/tooltip strings, so no new attack surface. Diff is small and well-scoped (4 files, +18/-6), reuses the existing `profileName` variable rather than re-deriving it, and the one added comment matches the file's existing section-comment style.
 
-  **REMINDER: add @morgan-heimbeck to README Contributors before v1.7.7 ships** (alongside the existing @williamvdev reminder above).
+  **Added to README Contributors.**
 
 - **Sign-in popups allowed from the login window, Google country-domain sign-in fixed (PR #133):** @ijaehun reported "Continue with Google" failing on claude.ai with "An error occurred during login" — Google sign-in now opens in a popup rather than navigating the existing window, and the login window's `setWindowOpenHandler` denied every popup unconditionally regardless of destination, so no amount of domain whitelisting could have fixed this; the popup was blocked before any hostname was ever checked. A second failure hit accounts that redirect through a country-specific Google domain mid-flow (`accounts.google.co.kr` for a Korean account, for example) — the hardcoded login allowlist only had the bare `accounts.google.com`.
 

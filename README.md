@@ -25,9 +25,9 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 🕐 **Configurable Date & Time Formats** — 12h/24h time, and flexible weekly reset date display  
 📐 **Compact Mode** — Minimal view for when you just need a quick glance  
 🧩 **Per-Model Breakdowns** — Rows and chart lines for Sonnet, Opus, Fable, Cowork, OAuth Apps, and Design usage when your account reports them  
-💳 **Credit Clarity** — Monthly spend cap and credit balance shown separately, with a promo-vs-purchased split and expiry warnings; your own per-member limit is used when Claude reports one, otherwise the organization limit  
+💳 **Credit Clarity** — Monthly spend cap and available balance shown separately, with the cap's reset date, a funding-stops-here marker when your balance would run out before the cap does, a distinct paused state once balance hits $0, and a promo-vs-purchased split with expiry warnings; your own per-member limit is used when Claude reports one, otherwise the organization limit. The meter also jumps to 100% if credit spend is actively climbing near the ceiling, since the reported percentage can lag slightly behind real spend.  
 ⏰ **Scheduled Session Start (experimental)** — Optionally send a tiny Haiku prompt at a set time each day so your five-hour window starts when you want it, locally or through a Claude cloud routine  
-👥 **Multi-Account Support** — Run isolated instances for separate accounts via the `--profile` flag (see below)  
+👥 **Multi-Account Support** — Run isolated instances for separate accounts via the `--profile` flag, with the active profile name shown in the title bar and tray tooltips so you can tell instances apart (see below)  
 
 > For a full history of changes by version, see [Release Notes](RELEASE_NOTES_1.7.X.md).
 
@@ -225,6 +225,8 @@ Launch with `--profile=<name>` to run a fully isolated instance — its own sess
 
 Example: `claude-usage-widget --profile=work`
 
+The active profile name is shown in the title bar and both tray tooltips, so you can tell at a glance which window or icon belongs to which account when running more than one instance.
+
 Profile names are sanitized to `[a-zA-Z0-9_-]` — anything else (including `.`) becomes `_`, so `--profile=jane.doe` resolves to the same profile as `--profile=jane_doe`. Worth knowing before assuming two different profile names you've typed are actually two different profiles.
 
 This is a power-user feature, tested by us but not yet broadly validated by the community — if you hit issues, please open a GitHub Discussion.
@@ -342,6 +344,9 @@ Special thanks to these contributors who have improved the widget:
 - [@mtspl](https://github.com/mtspl) - Rate-limit retry/backoff and auto-refresh jitter design (PR #114)
 - [@GTRows](https://github.com/GTRows) - CI prerelease auto-detection and macOS cert signing fix
 - [@Geozstevenzz](https://github.com/Geozstevenzz) - Login screen sizing fix (issue #71)
+- [@williamvdev](https://github.com/williamvdev) - Identified the Linux/Wayland second tray icon issue (issue #119), and found and fixed the AppImage relaunch crash it later caused (PR #123)
+- [@morgan-heimbeck](https://github.com/morgan-heimbeck) - Profile name shown in the title bar and tray tooltips (PR #130)
+- [@ijaehun](https://github.com/ijaehun) - Fixed Google sign-in failing in the login window, plus country-domain sign-in support (PR #133)
 
 ---
 
