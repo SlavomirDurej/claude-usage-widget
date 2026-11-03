@@ -56,6 +56,33 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 
 ---
 
+## Understanding the Display
+
+### Current Session & Weekly Limit
+
+| Column | Description |
+|--------|-------------|
+| Session Used | Progress bar showing usage from 0–100% |
+| Elapsed | Circular timer showing how far through the window you are |
+| Resets In | Countdown until the window resets |
+| Resets At | Actual local clock time / date when the window resets |
+
+**Color Coding:**
+- 🟣 Purple: Normal usage (below warning threshold, default 75%)
+- 🟠 Orange: High usage (above warning threshold)
+- 🔴 Red: Critical usage (above danger threshold, default 90%)
+
+---
+
+## Privacy & Security
+
+- Credentials stored **locally only** using encrypted storage
+- No data sent to any third-party servers
+- Only communicates with the official Claude.ai API
+- Logout clears all session data, cookies, and Electron session storage
+
+---
+
 ## Installation
 
 ### Download Pre-built Release
@@ -71,7 +98,7 @@ A beautiful, standalone desktop widget for **Windows, macOS, and Linux** that di
 2. Open the DMG and drag the app to your Applications folder
 3. Launch "Claude Usage Widget" from Applications
 
-> **Note:** The app is signed and notarized. If macOS still shows a warning on first launch, run:
+> **Note:** The app is signed and notarized by Apple, so it should launch without any extra steps. If macOS still shows a warning or blocks the first launch, run:
 > ```
 > xattr -cr /Applications/Claude\ Usage\ Widget.app
 > ```
@@ -263,33 +290,6 @@ A few things worth knowing:
 - **Wildcard syntax is exact:** a bare domain like `api.workos.com` matches *only* that exact hostname. Prefixing with `*.` (e.g. `*.workos.com`) also matches the bare domain itself plus any subdomain — use it if your SSO flow might redirect through more than one subdomain of the same provider, but keep in mind it's a broader grant of trust than the exact form.
 - **Enterprise SSO can involve more than one hop.** WorkOS (and similar identity brokers) typically redirect once to the broker itself, then again to your organization's actual identity provider (Okta, Azure AD, Google Workspace, etc.) — a domain you control, not one Anthropic or the broker controls. If login still gets blocked after whitelisting the broker's domain, check the console for which domain got blocked next and add that one too.
 - Multiple `--whitelist-add`/`--whitelist-remove` calls can be run one after another; `--whitelist-list` shows the always-trusted built-in list separately from your own additions.
-
----
-
-## Understanding the Display
-
-### Current Session & Weekly Limit
-
-| Column | Description |
-|--------|-------------|
-| Session Used | Progress bar showing usage from 0–100% |
-| Elapsed | Circular timer showing how far through the window you are |
-| Resets In | Countdown until the window resets |
-| Resets At | Actual local clock time / date when the window resets |
-
-**Color Coding:**
-- 🟣 Purple: Normal usage (below warning threshold, default 75%)
-- 🟠 Orange: High usage (above warning threshold)
-- 🔴 Red: Critical usage (above danger threshold, default 90%)
-
----
-
-## Privacy & Security
-
-- Credentials stored **locally only** using encrypted storage
-- No data sent to any third-party servers
-- Only communicates with the official Claude.ai API
-- Logout clears all session data, cookies, and Electron session storage
 
 ---
 
