@@ -1206,11 +1206,11 @@ function createTray() {
     
     // Create Weekly tray icon FIRST (left position, blue)
     weeklyTray = new Tray(staticIconPath);
-    weeklyTray.setToolTip('Weekly Usage');
-    
+    weeklyTray.setToolTip(profileName ? `Weekly Usage — ${profileName}` : 'Weekly Usage');
+
     // Create Session tray icon SECOND (right position, purple)
     sessionTray = new Tray(staticIconPath);
-    sessionTray.setToolTip('Session Usage');
+    sessionTray.setToolTip(profileName ? `Session Usage — ${profileName}` : 'Session Usage');
 
     logger.log('Tray created (session + weekly icons)');
 
@@ -1421,7 +1421,7 @@ function updateTrayIcon(usageData) {
     }
     if (weeklyTray && !weeklyTray.isDestroyed()) {
       weeklyTray.setImage(weeklyIcon);
-      let weeklyTooltip = `Weekly: ${Math.round(weeklyPercent)}%`;
+      let weeklyTooltip = profileName ? `${profileName} — Weekly: ${Math.round(weeklyPercent)}%` : `Weekly: ${Math.round(weeklyPercent)}%`;
       const weeklyResetTime = formatResetTime(weeklyResetsAt, timeFormat, true);
       if (weeklyResetTime) {
         weeklyTooltip += `\nResets: ${weeklyResetTime}`;
@@ -1439,7 +1439,7 @@ function updateTrayIcon(usageData) {
     }
     if (sessionTray && !sessionTray.isDestroyed()) {
       sessionTray.setImage(sessionIcon);
-      let sessionTooltip = `Session: ${Math.round(sessionPercent)}%`;
+      let sessionTooltip = profileName ? `${profileName} — Session: ${Math.round(sessionPercent)}%` : `Session: ${Math.round(sessionPercent)}%`;
       const sessionResetTime = formatResetTime(sessionResetsAt, timeFormat, false);
       if (sessionResetTime) {
         sessionTooltip += `\nResets: ${sessionResetTime}`;
@@ -1490,6 +1490,8 @@ function getStoredSessionKey(context = '') {
 }
 
 // IPC Handlers
+ipcMain.handle('get-profile-name', () => profileName);
+
 ipcMain.handle('get-credentials', () => {
   return {
     sessionKey: getStoredSessionKey(),

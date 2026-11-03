@@ -20,6 +20,9 @@ function isAllowedExternalUrl(url) {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Profile
+  getProfileName: () => ipcRenderer.invoke('get-profile-name'),
+
   // Credentials management
   getCredentials: () => ipcRenderer.invoke('get-credentials'),
   saveCredentials: (credentials) => ipcRenderer.invoke('save-credentials', credentials),
