@@ -778,27 +778,130 @@ body.theme-light .graph-btn.active {
     opacity: 0.8;
 }
 
-/* Monthly Spend row — flex layout (like the credits row below it):
-   fixed label, bar stretches to fill, dollar text flush right.
-   No dead columns; bar and text always meet with a single gap. */
-.usage-section.spend-row {
+/* Monthly Spend + balance section. No background fill and no border —
+   .expand-section above already provides the hairline separator from the
+   session/weekly rows, so a second border-top here just doubled that line.
+   See chat discussion Sep 2026. */
+.spend-card {
+    margin: 4px 6px 6px 6px;
+    padding: 6px 6px 4px 6px;
+}
+
+.spend-card-header {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
 }
 
-.spend-row .usage-label {
-    flex: 0 0 115px;
-}
-
-.spend-bar-group {
-    flex: 1;
-    min-width: 0;
-}
-
-.spend-cap-text {
+.spend-card-label {
+    color: #a0a0a0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     white-space: nowrap;
+}
+
+body.theme-light .spend-card-label {
+    color: #606080;
+}
+
+.spend-card-reset {
+    color: #a0a0a0;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.spend-card-bar-wrap {
+    margin: 6px 0 4px 0;
+}
+
+.spend-card-bar-wrap .progress-bar {
+    height: 6px;
+}
+
+.spend-card-caption {
+    color: #808080;
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.spend-card-caption-paused {
+    color: #e24b4a;
+    font-weight: 600;
+}
+
+.spend-card-divider {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    margin: 8px 0;
+}
+
+body.theme-light .spend-card-divider {
+    border-top-color: rgba(0, 0, 0, 0.08);
+}
+
+.spend-card-balance-row {
+    align-items: center;
+}
+
+.spend-card-balance-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.spend-card-balance-amount {
+    color: #e0e0e0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+body.theme-light .spend-card-balance-amount {
+    color: #1a1a2e;
+}
+
+.spend-card-buy-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8b5cf6;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.spend-card-buy-link:hover {
+    text-decoration: underline;
+}
+
+.spend-card-split {
+    margin-top: 4px;
+}
+
+.spend-progress-bar {
+    position: relative;
+}
+
+.funding-stop-marker {
+    position: absolute;
+    top: -3px;
+    width: 2px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 1px;
+}
+
+body.theme-light .funding-stop-marker {
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.progress-fill.paused {
+    background: rgba(255, 255, 255, 0.35);
+    box-shadow: none;
+}
+
+body.theme-light .progress-fill.paused {
+    background: rgba(0, 0, 0, 0.28);
 }
 
 .timer-text.extra-balance-label {
@@ -838,33 +941,6 @@ body.theme-light .graph-btn.active {
     border: 1px solid rgba(160, 160, 160, 0.3);
 }
 
-/* Credits row — free-form flex line beneath Monthly Spend.
-   Overrides the 5-column grid; label width matches the grid's
-   first column (115px) + gap so "Credits" aligns with other labels. */
-.usage-section.credits-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-}
-
-.credits-row .credits-label {
-    flex: 0 0 115px;
-    margin-right: 4px;
-}
-
-/* Invisible ON/OFF badge clone — keeps "Credits" aligned with "Monthly Spend" */
-.extra-status.badge-spacer {
-    visibility: hidden;
-}
-
-.credits-amount {
-    font-size: 11px;
-    font-weight: 600;
-    color: #c0c0c8;
-    white-space: nowrap;
-}
-
 .credits-split {
     font-size: 10px;
     color: #808080;
@@ -876,11 +952,11 @@ body.theme-light .graph-btn.active {
 
 .credits-chip {
     margin-left: auto;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 5px 12px;
+    border-radius: 6px;
     background: rgba(239, 159, 39, 0.15);
     color: #ef9f27;
     border: 1px solid rgba(239, 159, 39, 0.4);
@@ -912,6 +988,36 @@ body.theme-light .graph-btn.active {
     height: 100%;
     padding: 0;
 }
+
+.session-starter { padding: 0 4px; color: #c0c0d0; font-size: 11px; -webkit-app-region: no-drag; }
+.starter-controls { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.starter-enable { display: flex; align-items: center; gap: 5px; width: 91px; white-space: nowrap; }
+.starter-enable input { accent-color: #a78bfa; }
+.starter-time { display: flex; align-items: center; gap: 3px; }
+.starter-clock { width: 14px; height: 14px; flex: none; margin-right: 2px; color: #b6a0ed; }
+.starter-time select { width: auto; min-width: 0; padding: 3px 2px; }
+.starter-colon { opacity: .7; }
+.starter-modes { border: 1px solid #505066; border-radius: 5px; padding: 0; margin: 0; display: flex; overflow: hidden; }
+.starter-modes label { position: relative; cursor: pointer; }
+.starter-modes input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.starter-modes span { display: block; padding: 5px 8px; }
+.starter-modes input:checked + span { background: rgba(139,92,246,.3); color: #c4b5fd; }
+.starter-modes input:focus-visible + span { outline: 2px solid #a78bfa; outline-offset: -2px; }
+.starter-info, .starter-manage { background: none; border: 0; color: #b6a0ed; cursor: pointer; }
+.starter-info { display: flex; align-items: center; padding: 2px; cursor: help; }
+.starter-info svg { display: block; width: 18px; height: 18px; }
+.starter-caption { margin-top: 5px; font-size: 10px; line-height: 1.3; opacity: .8; }
+.session-starter :is(button, input, select):focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
+.session-starter :disabled { opacity: .6; cursor: wait; }
+.starter-status { margin-top: 6px; line-height: 1.4; overflow-wrap: anywhere; }
+.starter-status.error { color: #f49d8f; }
+.starter-manage { padding: 6px 0 0; font-size: 10px; }
+.session-starter [hidden] { display: none; }
+body.theme-light .session-starter { color: #45455a; }
+body.theme-light .starter-clock { color: #663ba8; }
+body.theme-light .starter-modes input:checked + span { color: #6030a0; }
+body.theme-light .starter-info, body.theme-light .starter-manage { color: #663ba8; }
+body.theme-light .starter-status.error { color: #a62d20; }
 
 .settings-overlay {
     position: absolute;
@@ -973,15 +1079,15 @@ body.theme-light .graph-btn.active {
 }
 
 body.theme-light .settings-disclaimer {
-    color: #808090;
+    color: #9090a0;
 }
 
 .settings-rows {
-    flex: 1;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    padding: 6px 14px;
+    justify-content: flex-start;
+    padding: 12px 14px;
     gap: 10px;
 }
 
@@ -1015,6 +1121,15 @@ body.theme-light .settings-disclaimer {
 .settings-col .settings-row-label {
     width: 90px;
     flex-shrink: 0;
+}
+
+/* Tray stats / taskbar stats / hide-from-taskbar labels are longer than the
+   default 90px column allows without wrapping - widen just this group
+   instead of the shared default, so unrelated rows (Theme, Warn at, etc.)
+   are untouched. 150px sized against "Show System Tray stats", the longest
+   of the three. */
+.settings-col-wide-label .settings-row-label {
+    width: 150px;
 }
 
 .settings-col-disabled .settings-row-label {
@@ -1082,6 +1197,17 @@ body.theme-light .settings-disclaimer {
 .threshold-input:focus {
     border-color: #8b5cf6;
     outline: none;
+}
+
+/* Light theme: same tokens as .settings-select so the numbers are readable. */
+body.theme-light .threshold-input {
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.15);
+    color: #303050;
+}
+
+body.theme-light .threshold-input:focus {
+    border-color: #8b5cf6;
 }
 
 .threshold-pct {
@@ -1210,8 +1336,9 @@ body.theme-light .settings-disclaimer {
 
 .coffee-btn {
     background: rgba(255, 193, 7, 0.12);
-    color: #fbbf24;
-    border: 1px solid rgba(255, 193, 7, 0.25);
+    /* Neutral text + border (same color via currentColor); the icon inherits it too. */
+    color: #e0e0f0;
+    border: 1px solid currentColor;
     padding: 5px 10px;
     border-radius: 6px;
     font-size: 10px;
@@ -1232,7 +1359,10 @@ body.theme-light .settings-disclaimer {
 
 .coffee-btn:hover {
     background: rgba(255, 193, 7, 0.2);
-    border-color: rgba(255, 193, 7, 0.45);
+}
+
+body.theme-light .coffee-btn {
+    color: #303050;
 }
 
 .settings-btn {
@@ -1341,10 +1471,6 @@ body.theme-light .settings-overlay {
 
 body.theme-light .settings-row-label {
     color: #303050;
-}
-
-body.theme-light .settings-disclaimer {
-    color: #9090a0;
 }
 
 body.theme-light .theme-btn {
@@ -1702,3 +1828,5 @@ body.theme-light .compact-pct {
 .progress-fill.pulse {
     animation: pulse-danger 1.2s ease-in-out infinite;
 }
+
+#settingsOverlay .settings-header, #settingsOverlay .settings-footer { flex-shrink: 0; }

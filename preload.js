@@ -20,6 +20,9 @@ function isAllowedExternalUrl(url) {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Profile
+  getProfileName: () => ipcRenderer.invoke('get-profile-name'),
+
   // Credentials management
   getCredentials: () => ipcRenderer.invoke('get-credentials'),
   saveCredentials: (credentials) => ipcRenderer.invoke('save-credentials', credentials),
@@ -62,6 +65,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+  getSessionStarter: () => ipcRenderer.invoke('get-session-starter'),
+  saveSessionStarter: (config) => ipcRenderer.invoke('save-session-starter', config),
+  onSessionStarterStatus: (callback) => {
+    ipcRenderer.on('session-starter-status', (_event, snapshot) => callback(snapshot));
+  },
 
   // Updates
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),

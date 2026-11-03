@@ -24,7 +24,7 @@
             <div class="title-bar" id="titleBar">
                 <div class="title">
                     <img src="../../assets/logo.png" alt="Logo" class="app-logo">
-                    <span>Claude Usage</span>
+                    <span id="titleBarLabel">Claude Usage</span>
                 </div>
                 <div class="controls">
                     <button class="control-btn settings-btn" id="settingsBtn" title="Settings">⚙️</button>
@@ -247,7 +247,7 @@
                 <div class="settings-content">
                     <div class="settings-header">
                         <span class="settings-title">Settings</span>
-                        <button class="done-settings-btn" id="closeSettingsBtn" title="Done">Done</button>
+                        <button class="done-settings-btn" id="closeSettingsBtn" title="Save">Save</button>
                     </div>
 
                     <div class="settings-disclaimer">
@@ -265,10 +265,10 @@
                                 </label>
                                 <span class="settings-row-hint" id="autoStartHint" style="display: none;">Not supported on Linux</span>
                             </div>
-                            <div class="settings-col">
-                                <span class="settings-row-label" id="trayLabel">Hide from taskbar</span>
+                            <div class="settings-col settings-col-wide-label">
+                                <span class="settings-row-label">Show System Tray stats</span>
                                 <label class="toggle-switch">
-                                    <input type="checkbox" id="minimizeToTrayToggle">
+                                    <input type="checkbox" id="showTrayStatsToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
@@ -283,16 +283,17 @@
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
-                            <div class="settings-col">
-                                <span class="settings-row-label">Show tray stats</span>
+                            <div class="settings-col settings-col-wide-label" id="taskbarStatsCol">
+                                <span class="settings-row-label">Show Taskbar stats</span>
                                 <label class="toggle-switch">
-                                    <input type="checkbox" id="showTrayStatsToggle">
+                                    <input type="checkbox" id="showTaskbarStatsToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
+                                <span class="settings-row-hint" id="taskbarStatsHint" style="display: none;">Hidden from Taskbar</span>
                             </div>
                         </div>
 
-                        <!-- Row 3: compact mode + usage alerts -->
+                        <!-- Row 3: compact mode + hide from taskbar -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Compact mode</span>
@@ -301,24 +302,23 @@
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
+                            <div class="settings-col settings-col-wide-label">
+                                <span class="settings-row-label" id="trayLabel">Hide from Taskbar</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="minimizeToTrayToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Row 4: usage alerts + organization selector -->
+                        <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Usage Alerts</span>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="usageAlertsToggle">
                                     <span class="toggle-slider"></span>
                                 </label>
-                            </div>
-                        </div>
-
-                        <!-- Row 4: theme + organization selector -->
-                        <div class="settings-row-2col">
-                            <div class="settings-col">
-                                <span class="settings-row-label">Theme</span>
-                                <div class="theme-selector">
-                                    <button class="theme-btn active" data-theme="dark">Dark</button>
-                                    <button class="theme-btn" data-theme="light">Light</button>
-                                    <button class="theme-btn" data-theme="system">System</button>
-                                </div>
                             </div>
                             <div class="settings-col" id="orgSelectorCol" style="display: none;">
                                 <span class="settings-row-label">Organization</span>
@@ -329,7 +329,21 @@
                             </div>
                         </div>
 
-                        <!-- Row 5: time format + warn thresholds -->
+                        <!-- Row 5: theme (blank cell to the right — Theme's button row is the
+                             widest control in the panel and needs room to breathe) -->
+                        <div class="settings-row-2col">
+                            <div class="settings-col">
+                                <span class="settings-row-label">Theme</span>
+                                <div class="theme-selector">
+                                    <button class="theme-btn active" data-theme="dark">Dark</button>
+                                    <button class="theme-btn" data-theme="light">Light</button>
+                                    <button class="theme-btn" data-theme="system">System</button>
+                                </div>
+                            </div>
+                            <div class="settings-col"></div>
+                        </div>
+
+                        <!-- Row 6: time format + warn thresholds -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Time format</span>
@@ -355,14 +369,21 @@
                             </div>
                         </div>
 
-                        <!-- Row 6: date format + auto refresh -->
+                        <!-- Row 7: date format + auto refresh -->
                         <div class="settings-row-2col">
                             <div class="settings-col">
                                 <span class="settings-row-label">Date format</span>
                                 <select id="weeklyDateFormat" class="settings-select">
-                                    <option value="date">Mar 13</option>
-                                    <option value="date-day">Fri Mar 13</option>
-                                    <option value="date-day-time">Fri Mar 13 + time</option>
+                                    <optgroup label="Month Day">
+                                        <option value="date">Mar 13</option>
+                                        <option value="date-day">Fri Mar 13</option>
+                                        <option value="date-day-time">Fri Mar 13 + time</option>
+                                    </optgroup>
+                                    <optgroup label="Day Month">
+                                        <option value="date-dmy">13 Mar</option>
+                                        <option value="date-day-dmy">Fri 13 Mar</option>
+                                        <option value="date-day-time-dmy">Fri 13 Mar + time</option>
+                                    </optgroup>
                                 </select>
                             </div>
                             <div class="settings-col">
@@ -377,6 +398,28 @@
                             </div>
                         </div>
 
+                    <section class="session-starter" aria-label="Scheduled session start">
+                        <div class="starter-controls">
+                            <label class="starter-enable"><input type="checkbox" id="sessionStartEnabled"> Start session at</label>
+                            <div class="starter-time" id="sessionStartTimeGroup" role="group" aria-label="Session start time">
+                                <svg class="starter-clock" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.5V8l2.4 1.6"/></svg>
+                                <select id="sessionStartHour" class="settings-select" aria-label="Hour"></select>
+                                <span class="starter-colon" aria-hidden="true">:</span>
+                                <select id="sessionStartMinute" class="settings-select" aria-label="Minute"></select>
+                                <select id="sessionStartPeriod" class="settings-select" aria-label="AM or PM"></select>
+                            </div>
+                            <fieldset class="starter-modes" aria-label="Session start location">
+                                <label><input type="radio" name="sessionStartMode" value="local" checked><span>Local</span></label>
+                                <label><input type="radio" name="sessionStartMode" value="cloud"><span>Cloud</span></label>
+                            </fieldset>
+                            <button type="button" id="sessionStartInfo" class="starter-info" aria-label="About scheduled session start">
+                                <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.25v4"/><circle cx="8" cy="4.85" r=".75" fill="currentColor" stroke="none"/></svg>
+                            </button>
+                        </div>
+                        <div id="sessionStartCaption" class="starter-caption"></div>
+                        <div id="sessionStartStatus" class="starter-status error" role="alert" hidden></div>
+                        <button type="button" id="sessionStartManage" class="starter-manage" hidden>Manage cloud routine in Claude ↗</button>
+                    </section>
                     </div>
 
                     <div class="settings-footer">
@@ -402,7 +445,7 @@
                 <div class="settings-content">
                     <div class="settings-header">
                         <span class="settings-title">Settings</span>
-                        <button class="done-settings-btn" id="closeCompactSettingsBtn" title="Done">Done</button>
+                        <button class="done-settings-btn" id="closeCompactSettingsBtn" title="Save">Save</button>
                     </div>
                     <div class="compact-settings-body">
                         <div class="settings-col">

@@ -1,29 +1,107 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, session, shell, Notification, safeStorage, nativeImage, screen, powerMonitor } = require('electron');
+
+// Linux/Wayland: force Xwayland compat mode so the second system tray icon
+// (weekly) renders — Electron only gives the *first* Tray() instance real
+// StatusNotifierItem support; later ones fall back to GtkStatusIcon, which
+// doesn't work under native Wayland (Issue #119). Done via a one-time
+// self-relaunch with a real argv flag, not app.commandLine.appendSwitch()
+// — Chromium picks its Ozone backend before appendSwitch() would take
+// effect. Linux/Wayland only; X11, Windows, and macOS are untouched.
+relaunchUnderXwaylandIfNeeded();
+
+function relaunchUnderXwaylandIfNeeded() {
+  const flag = '--ozone-platform=x11';
+  if (process.platform !== 'linux' || process.env.XDG_SESSION_TYPE !== 'wayland' || process.argv.includes(flag)) {
+    return;
+  }
+
+  const relaunchArgs = process.argv.slice(1).concat([flag]);
+
+  if (process.env.APPIMAGE) {
+    // app.relaunch() can't be used here: it spawns an intermediate
+    // "relauncher" helper off the *current* (mounted) binary, which blocks
+    // waiting for this process to exit — but this process exiting is what
+    // unmounts the binary the helper is still running from, killing it
+    // before it ever launches the real target. Spawning process.env.APPIMAGE
+    // (the original .appimage file) ourselves sidesteps that entirely; it
+    // gets its own independent mount. Trade-off: this process's own AppImage
+    // mount can't fully unmount until the relaunched instance exits (it
+    // inherits a few fds into it), so a harmless idle process+mount lingers
+    // for the session's lifetime and cleans up on quit.
+    const { spawn } = require('child_process');
+    const child = spawn(process.env.APPIMAGE, relaunchArgs, { detached: true, stdio: 'ignore' });
+    child.once('spawn', () => {
+      child.unref();
+      app.exit(0);
+    });
+    child.once('error', () => app.exit(0));
+  } else {
+    app.relaunch({ args: relaunchArgs });
+    app.exit(0);
+  }
+}
+
 const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
 const { fetchViaWindow, fetchMultipleViaWindow } = require('./src/fetch-via-window');
 const { normalizeUsageLimits } = require('./src/normalize-usage-limits');
+const { recoverBounds, clearsVisibilityThreshold } = require('./src/window-bounds');
+const { detectActiveCreditSpend } = require('./src/detect-active-credit-spend');
+
+const { SessionStarter } = require('./src/session-starter');
+const { SessionStarterAPI } = require('./src/session-starter-api');
+const { sessionStarterRequest } = require('./src/session-starter-request');
 
 const GITHUB_OWNER = 'SlavomirDurej';
 const GITHUB_REPO = 'claude-usage-widget';
 
-// Required for Windows taskbar features (notifications, Jump List tasks) to register
-// reliably under one stable identity — without this, dev (npm start) and packaged
-// builds show up as generic "Electron" and custom Jump List tasks may not appear.
-// Matches package.json build.appId so dev and packaged runs share the same identity.
-if (process.platform === 'win32') {
-  app.setAppUserModelId('com.claudeusage.widget');
-}
+// Security: restrict login-window navigation to trusted domains only. Fixed,
+// not user-editable — see src/domain-whitelist.js for the additive user layer
+// on top of this (--whitelist-add/--whitelist-remove/--whitelist-list).
+const LOGIN_ALLOWED_DOMAINS = [
+  'claude.ai',
+  'accounts.google.com',
+  'appleid.apple.com',
+  'login.microsoftonline.com'
+];
 
+// Google sign-in hops through the account's country domain mid-flow
+// (accounts.google.co.kr/accounts/SetSID for a Korean account), so
+// accounts.google.com alone closes the sign-in halfway. Exactly accounts.google
+// plus one country suffix: .com, .de, .co.kr, .com.au — nothing longer.
+const GOOGLE_ACCOUNTS_HOST = /^accounts\.google\.(com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/;
 
 // Profile isolation: --profile=<name> launches a fully separate instance with its own
 // session, cookies, and settings. Must be set before anything reads app.getPath('userData').
 const fs = require('fs');
 const os = require('os');
+const logger = require('./src/logger');
+const {
+  loadWhitelist,
+  saveWhitelist,
+  normalizeEntry,
+  isCoveredByHardcoded,
+  isHostnameAllowed,
+  getWhitelistPath
+} = require('./src/domain-whitelist');
+
+// Captured before any --profile remapping below — the domain whitelist is a
+// machine-level trust decision, not account data, so it lives in one place
+// shared by every --profile instance rather than being duplicated per profile.
+const baseUserDataPath = app.getPath('userData');
+
+// Computed early (only depends on argv/env) so it's available to logger.init()
+// below, before Store or anything else in the startup sequence exists.
+// NOTE: the flag is --debug-log, not --debug — Electron/Node intercept --debug
+// as a reserved legacy Node debugger switch (node --debug) and hard-reject it
+// before argv ever reaches this file, regardless of what our code checks for.
+const DEBUG = process.env.DEBUG_LOG === '1' || process.argv.includes('--debug-log');
+
 const profileArg = process.argv.find(a => a.startsWith('--profile='));
+let profileName = null;
 if (profileArg) {
-  const profileName = profileArg.split('=')[1].replace(/[^a-zA-Z0-9_-]/g, '_');
+  profileName = profileArg.split('=')[1].replace(/[^a-zA-Z0-9_-]/g, '_');
   const profilePath = path.join(app.getPath('userData'), 'profiles', profileName);
   app.setPath('userData', profilePath);
   // Always logged (not gated behind DEBUG_LOG) so multi-instance bug reports can be
@@ -31,6 +109,153 @@ if (profileArg) {
   // userData root, distinguishing profile-folder isolation from org-ID isolation.
   console.log(`[Profile] Using profile "${profileName}" -> userData: ${profilePath}`);
 }
+
+// --whitelist-add / --whitelist-remove / --whitelist-list: manage the user's
+// domain whitelist and exit immediately, without starting the app. Global —
+// operates on baseUserDataPath regardless of any --profile also passed, since
+// the whitelist is shared by every profile (see domain-whitelist.js header).
+// Additive only: cannot remove or override LOGIN_ALLOWED_DOMAINS, only add to it.
+{
+  const addArg = process.argv.find(a => a.startsWith('--whitelist-add='));
+  const removeArg = process.argv.find(a => a.startsWith('--whitelist-remove='));
+  const listRequested = process.argv.includes('--whitelist-list');
+
+  if (addArg || removeArg || listRequested) {
+    const whitelistPath = getWhitelistPath(baseUserDataPath);
+
+    if (addArg) {
+      const rawValue = addArg.split('=').slice(1).join('=');
+      const result = normalizeEntry(rawValue);
+      if (!result.ok) {
+        console.error(`[Whitelist] Not added: ${result.reason}`);
+        app.exit(1);
+        return;
+      }
+      const bareForCoverageCheck = result.value.startsWith('*.') ? result.value.slice(2) : result.value;
+      if (isCoveredByHardcoded(bareForCoverageCheck, LOGIN_ALLOWED_DOMAINS)) {
+        console.log(`[Whitelist] "${result.value}" is already trusted by default (${LOGIN_ALLOWED_DOMAINS.join(', ')}) — no need to add it.`);
+        app.exit(0);
+        return;
+      }
+      const entries = loadWhitelist(baseUserDataPath);
+      if (entries.includes(result.value)) {
+        console.log(`[Whitelist] "${result.value}" is already on the whitelist.`);
+        app.exit(0);
+        return;
+      }
+      entries.push(result.value);
+      entries.sort();
+      saveWhitelist(baseUserDataPath, entries);
+      console.log(`[Whitelist] Added "${result.value}". Takes effect the next time a login window is opened. Saved to: ${whitelistPath}`);
+      app.exit(0);
+      return;
+    }
+
+    if (removeArg) {
+      const rawValue = removeArg.split('=').slice(1).join('=').trim().toLowerCase();
+      const entries = loadWhitelist(baseUserDataPath);
+      const index = entries.indexOf(rawValue);
+      if (index === -1) {
+        console.log(`[Whitelist] "${rawValue}" was not found on the whitelist. Use --whitelist-list to see current entries — note that removal requires an exact match, including a leading "*." if the entry has one.`);
+        app.exit(1);
+        return;
+      }
+      entries.splice(index, 1);
+      saveWhitelist(baseUserDataPath, entries);
+      console.log(`[Whitelist] Removed "${rawValue}".`);
+      app.exit(0);
+      return;
+    }
+
+    if (listRequested) {
+      const entries = loadWhitelist(baseUserDataPath);
+      console.log(`[Whitelist] Always trusted (built-in, not editable): ${LOGIN_ALLOWED_DOMAINS.join(', ')}`);
+      if (entries.length === 0) {
+        console.log('[Whitelist] No user-added domains yet. Add one with --whitelist-add=<domain>, e.g. --whitelist-add=api.workos.com or --whitelist-add=*.workos.com');
+      } else {
+        console.log(`[Whitelist] User-added (${whitelistPath}):`);
+        entries.forEach((entry) => console.log(`  ${entry}`));
+      }
+      app.exit(0);
+      return;
+    }
+  }
+}
+
+// --reset-aumid: generate a new AppUserModelID for this profile and exit immediately,
+// without starting the app. The next normal launch of this profile picks it up from
+// aumid-override.json (checked below, before app.setAppUserModelId()). Self-serve
+// recovery for Windows Shell state stuck against the current AUMID — see the
+// "Windows Taskbar/AppUserModelID Icon Corruption" note in CONTRIBUTING.md — without
+// needing a new --profile or a code release. Combine with --profile=<name> to target
+// a specific profile; omitting --profile resets the default profile.
+if (process.argv.includes('--reset-aumid')) {
+  if (process.platform !== 'win32') {
+    console.log('[Reset AUMID] AppUserModelID is a Windows-only concept — nothing to reset on this platform.');
+    app.exit(0);
+    return;
+  }
+  const overridePath = path.join(app.getPath('userData'), 'aumid-override.json');
+  const newAumid = `com.claudeusage.widget${profileName ? `.profile-${profileName}` : ''}.reset-${Date.now()}`;
+  try {
+    fs.mkdirSync(path.dirname(overridePath), { recursive: true });
+    fs.writeFileSync(overridePath, JSON.stringify({ aumid: newAumid }, null, 2), 'utf-8');
+    console.log(`[Reset AUMID] New AppUserModelID saved for ${profileName ? `profile "${profileName}"` : 'the default profile'}: ${newAumid}`);
+    console.log('[Reset AUMID] Takes effect on the next normal launch. Any taskbar pin made before this reset will need to be re-pinned afterward.');
+    app.exit(0);
+    return;
+  } catch (err) {
+    console.error('[Reset AUMID] Failed to write override:', err.message);
+    app.exit(1);
+    return;
+  }
+}
+
+// Required for Windows taskbar features (notifications, Jump List tasks) to register
+// reliably under one stable identity — without this, dev (npm start) and packaged
+// builds show up as generic "Electron" and custom Jump List tasks may not appear.
+// Matches package.json build.appId so dev and packaged runs share the same identity.
+// Profile-scoped (not the same identity for every --profile instance): two profiles
+// sharing one AUMID would have their taskbar buttons grouped by Windows into one
+// entry. This suffix is stable per profile name, not regenerated per launch —
+// each profile just gets its own permanent, separate identity, unless overridden
+// by a prior --reset-aumid run (see above).
+// Hoisted so it's available to the startup log line below, regardless of platform.
+let aumidForLog = 'n/a (non-Windows)';
+
+if (process.platform === 'win32') {
+  let aumid = profileName
+    ? `com.claudeusage.widget.profile-${profileName}`
+    : 'com.claudeusage.widget';
+
+  const overridePath = path.join(app.getPath('userData'), 'aumid-override.json');
+  try {
+    if (fs.existsSync(overridePath)) {
+      const override = JSON.parse(fs.readFileSync(overridePath, 'utf-8'));
+      if (override && typeof override.aumid === 'string' && override.aumid.trim()) {
+        aumid = override.aumid.trim();
+      }
+    }
+  } catch (err) {
+    // Corrupt or unreadable override file — fall back to the default identity
+    // rather than failing startup over a recovery file that itself needs recovery.
+    console.error('[AUMID] Failed to read aumid-override.json, using default identity:', err.message);
+  }
+
+  // Always logged (not gated behind DEBUG_LOG), same reasoning as the [Profile] line
+  // above — lets a reset be confirmed, or a corruption report be triaged, from
+  // terminal output alone.
+  console.log(`[AUMID] Using AppUserModelID: ${aumid}`);
+
+  app.setAppUserModelId(aumid);
+  aumidForLog = aumid;
+}
+
+// Baseline lifecycle logging starts here - identity (profile, userData path,
+// AUMID) is fully resolved at this point. Always on; verbosity beyond this
+// startup line is gated by DEBUG (see logger.debugLog / debugLog()).
+logger.init(app.getPath('userData'), { debug: DEBUG });
+logger.log(`App start - profile: ${profileName || 'default'}, userData: ${app.getPath('userData')}, AUMID: ${aumidForLog}, debug: ${DEBUG}`);
 
 // Migration: Handle old encrypted config files from v1.7.0 and earlier
 // Must happen BEFORE creating Store instance to prevent parse errors.
@@ -67,11 +292,12 @@ if (!profileArg) {
 // Non-sensitive settings storage (no encryption needed)
 const store = new Store();
 
-// Debug mode: set DEBUG_LOG=1 env var or pass --debug flag to see verbose logs.
-// Regular users will only see critical errors in the console.
-const DEBUG = process.env.DEBUG_LOG === '1' || process.argv.includes('--debug');
+// Debug mode: set DEBUG_LOG=1 env var or pass --debug-log flag to see verbose logs.
+// Regular users will only see critical errors in the console. DEBUG itself is
+// computed earlier (before logger.init()) - see the comment near baseUserDataPath.
 function debugLog(...args) {
   if (DEBUG) console.log('[Debug]', ...args);
+  logger.debugLog(args.map(String).join(' '));
 }
 
 const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -85,6 +311,18 @@ let weeklyTray = null;   // Tray icon for Weekly usage
 // this, app.quit() can't be told apart from a user clicking the close
 // button to just minimize -- both arrive as the same window 'close' event.
 let isQuitting = false;
+
+const sessionStarter = new SessionStarter({
+  store,
+  api: new SessionStarterAPI(sessionStarterRequest),
+  getOrganization: () => store.get('organizationId'),
+  onChange: snapshot => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('session-starter-status', snapshot);
+  },
+  onUsage: () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('refresh-usage');
+  }
+});
 
 // Single source of truth for "is there a recovery surface to bring the
 // window back via". Hiding/minimizing-to-tray is only ever safe when this
@@ -212,30 +450,11 @@ async function setSessionCookie(sessionKey) {
   debugLog('sessionKey cookie set in Electron session');
 }
 
-// Returns true if a rect at (x, y) with the given width/height overlaps
-// at least one currently connected display's work area. Used to recover
-// from saved window positions left over from a different monitor setup
-// (e.g. switching from an ultrawide to a laptop-only display).
-function isPositionOnScreen(x, y, width, height) {
-  const rect = { x, y, width, height };
-  return screen.getAllDisplays().some((display) => {
-    const area = display.workArea;
-    return (
-      rect.x < area.x + area.width &&
-      rect.x + rect.width > area.x &&
-      rect.y < area.y + area.height &&
-      rect.y + rect.height > area.y
-    );
-  });
-}
-
-// Centered position on the primary display's work area, for the given window size.
-function getCenteredPosition(width, height) {
-  const area = screen.getPrimaryDisplay().workArea;
-  return {
-    x: Math.round(area.x + (area.width - width) / 2),
-    y: Math.round(area.y + (area.height - height) / 2)
-  };
+// Displays ordered primary-first — recoverBounds treats the first entry as
+// the primary for its recenter fallback.
+function orderedDisplays() {
+  const primary = screen.getPrimaryDisplay();
+  return [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)];
 }
 
 // True only if the window is actually shown AND within some display's bounds.
@@ -245,8 +464,41 @@ function getCenteredPosition(width, height) {
 function isMainWindowShownOnScreen() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (!mainWindow.isVisible() || mainWindow.isMinimized()) return false;
+  // Same 80x32 threshold recoverBounds uses, so the tray toggle and every
+  // recovery path agree on what "shown" means — an any-pixel-overlap check
+  // here called a sliver-visible window "shown" and hid it on tray click.
   const bounds = mainWindow.getBounds();
-  return isPositionOnScreen(bounds.x, bounds.y, bounds.width, bounds.height);
+  return orderedDisplays().some((display) =>
+    clearsVisibilityThreshold(bounds, display.workArea || display.bounds, 80, 32));
+}
+
+// Captures whether the window is hidden, OS-minimized, or normally shown
+// right before the app actually exits, so the next launch can restore that
+// same state instead of always starting fully visible. Stored outside the
+// settings.* namespace since this isn't a user preference — it's internal
+// runtime state, same category as updateBannerVisible.
+//
+// There is no single quit path to hook this into: the X-close handler,
+// the tray "Exit" menu item, and a genuine app.quit() (OS shutdown/logoff)
+// each force-destroy independently by design (see the comments on each).
+// This function is called from the top of the two that need it explicitly;
+// the X-close path only ever fires while the window is visible in the
+// first place, so it always captures 'normal' regardless.
+function captureWindowVisibilityOnExit() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  let state = 'normal';
+  // isMinimized() must be checked before isVisible() - on Windows, a
+  // minimized window reports isVisible() === false too (confirmed via
+  // debug log: isVisible=false, isMinimized=true simultaneously), so
+  // checking isVisible() first misclassified every minimized exit as
+  // 'hidden' instead of 'minimized'.
+  if (mainWindow.isMinimized()) {
+    state = 'minimized';
+  } else if (!mainWindow.isVisible()) {
+    state = 'hidden';
+  }
+  logger.debugLog(`Capturing exit visibility: isVisible=${mainWindow.isVisible()}, isMinimized=${mainWindow.isMinimized()} -> ${state}`);
+  store.set('state.windowVisibilityOnExit', state);
 }
 
 // Implicit/automatic triggers (tray left-click, taskbar left-click/restore,
@@ -265,11 +517,15 @@ function showMainWindowSmart() {
     return;
   }
   const bounds = mainWindow.getBounds();
-  if (!isPositionOnScreen(bounds.x, bounds.y, bounds.width, bounds.height)) {
-    const { x, y } = getCenteredPosition(bounds.width, bounds.height);
-    debugLog('[Window] Recentering off-screen window from', bounds, 'to', { x, y });
-    mainWindow.setPosition(x, y);
-    store.set('windowPosition', { x, y });
+  const recovered = recoverBounds(bounds, orderedDisplays(), {
+    fallbackWidth: WIDGET_WIDTH,
+    fallbackHeight: WIDGET_HEIGHT
+  });
+  if (recovered.x !== bounds.x || recovered.y !== bounds.y
+      || recovered.width !== bounds.width || recovered.height !== bounds.height) {
+    debugLog('[Window] Recovering window from', bounds, 'to', recovered);
+    mainWindow.setBounds(recovered);
+    store.set('windowPosition', { x: recovered.x, y: recovered.y });
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -278,9 +534,16 @@ function showMainWindowSmart() {
 
 function createMainWindow() {
   let savedPosition = store.get('windowPosition');
-  if (savedPosition && !isPositionOnScreen(savedPosition.x, savedPosition.y, WIDGET_WIDTH, WIDGET_HEIGHT)) {
-    debugLog('[Window] Saved position', savedPosition, 'is off-screen on current display setup; centering instead');
-    savedPosition = null;
+  if (savedPosition) {
+    const recovered = recoverBounds(
+      { x: savedPosition.x, y: savedPosition.y, width: WIDGET_WIDTH, height: WIDGET_HEIGHT },
+      orderedDisplays(),
+      { fallbackWidth: WIDGET_WIDTH, fallbackHeight: WIDGET_HEIGHT }
+    );
+    if (recovered.x !== savedPosition.x || recovered.y !== savedPosition.y) {
+      debugLog('[Window] Saved position', savedPosition, 'recovered to', recovered);
+    }
+    savedPosition = { x: recovered.x, y: recovered.y };
   }
   const windowOptions = {
     width: WIDGET_WIDTH,
@@ -290,6 +553,11 @@ function createMainWindow() {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: false,
+    // Startup visibility is decided explicitly after the window and tray
+    // exist (see the whenReady sequence) rather than shown automatically -
+    // that's what makes restoring the hidden/minimized/normal state from
+    // the last exit possible.
+    show: false,
     icon: path.join(__dirname, process.platform === 'darwin' ? 'assets/icon.icns' : process.platform === 'linux' ? 'assets/logo.png' : 'assets/icon.ico'),
     webPreferences: {
       nodeIntegration: false,
@@ -310,22 +578,28 @@ function createMainWindow() {
   mainWindow.on('move', () => {
     if (positionSaveTimer) clearTimeout(positionSaveTimer);
     positionSaveTimer = setTimeout(() => {
+      // The window can be destroyed between the move and this debounce
+      // firing (close/quit within 300ms of a drag) — getBounds on a
+      // destroyed window throws. The sibling 'resize' handler already
+      // guards; 'move' was missed.
+      if (!mainWindow || mainWindow.isDestroyed()) return;
       const position = mainWindow.getBounds();
       store.set('windowPosition', { x: position.x, y: position.y });
     }, 300);
   });
 
-  // Single interception point for ANY close request — native taskbar
-  // "Close window", Alt+F4, or the in-app close button (which now just
-  // calls mainWindow.close() and lets this decide). Only hide-to-tray when
-  // there's an actual tray icon to bring it back via; otherwise let it
-  // close normally so window-all-closed below can quit the process.
+  // Close (X button, Alt+F4, or "Close window" from the taskbar button's
+  // right-click menu — all send the same close signal) always quits the app
+  // outright now. Minimize (the app's own − button) is the dedicated way to
+  // tuck it away while keeping a tray/taskbar icon as the way back in.
   mainWindow.on('close', (event) => {
+    captureWindowVisibilityOnExit();
     if (isQuitting) return;
-    if (hasTrayIcon()) {
-      event.preventDefault();
-      mainWindow.hide();
-    }
+    event.preventDefault();
+    isQuitting = true;
+    destroyTrayIcons();
+    mainWindow.destroy();
+    app.exit(0);
   });
 
   mainWindow.on('closed', () => {
@@ -336,6 +610,7 @@ function createMainWindow() {
   // covers the case where the window was minimized before a monitor change
   // and is now restoring to coordinates that no longer exist.
   mainWindow.on('restore', () => {
+    logger.debugLog('mainWindow restore event fired');
     showMainWindowSmart();
   });
 
@@ -346,6 +621,7 @@ function createMainWindow() {
   // instead of needing a focus -> minimize -> restore cycle first. Cheap
   // check, only acts when actually off-screen, so no effect on normal use.
   mainWindow.on('focus', () => {
+    logger.debugLog('mainWindow focus event fired');
     showMainWindowSmart();
   });
 
@@ -686,8 +962,237 @@ function generateRedXIcon() {
   return nativeImage.createFromBuffer(buffer, { width, height });
 }
 
+/**
+ * Taskbar icon geometry. The icon is drawn at 128x128 and handed to Windows,
+ * which scales it down to whatever the taskbar/window needs (24-48px). Drawing
+ * large keeps the two numbers readable after that downscale and avoids the
+ * blurry upscale that a 20x20 tray-sized icon would produce on high-DPI screens.
+ *
+ * Single icon on mainWindow's own taskbar button (mainWindow.setIcon()), split
+ * into two threshold-colored panels — session left, weekly right — rather than
+ * a second invisible window with its own AppUserModelID. Ported from
+ * bastionecho's PR #115 (credited below), which took this single-icon approach
+ * from the start; the earlier two-window implementation (backed out) was a
+ * different design built to work around a legibility problem that, on review,
+ * this split-panel version at full 128px doesn't actually have.
+ */
+const TASKBAR_ICON_SIZE = 128;
+const TASKBAR_PANEL_PADDING = 3;
+const TASKBAR_MAX_GLYPH_SCALE = 4.5;
+const TASKBAR_DIVIDER_COLOR = { r: 24, g: 24, b: 32 };
 
+/**
+ * Fill a rectangle in a BGRA buffer, clipping to the buffer bounds
+ */
+function fillRect(buffer, width, height, x, y, w, h, color, alpha = 255) {
+  const x0 = Math.max(0, Math.round(x));
+  const y0 = Math.max(0, Math.round(y));
+  const x1 = Math.min(width, Math.round(x + w));
+  const y1 = Math.min(height, Math.round(y + h));
 
+  for (let py = y0; py < y1; py++) {
+    for (let px = x0; px < x1; px++) {
+      const offset = (py * width + px) * 4;
+      buffer[offset] = color.b;
+      buffer[offset + 1] = color.g;
+      buffer[offset + 2] = color.r;
+      buffer[offset + 3] = alpha;
+    }
+  }
+}
+
+/**
+ * Draw a bitmap character scaled by an arbitrary (possibly fractional) factor.
+ * Nearest-neighbour sampling is fine here because the 128px master is always
+ * resampled by Windows before it reaches the screen.
+ */
+function drawCharScaled(buffer, width, height, char, x, y, scale, color, useNarrow = false) {
+  const charWidth = useNarrow ? 6 : 8;
+  const bitmap = useNarrow ? BITMAP_FONT_NARROW[char] : BITMAP_FONT[char];
+  if (!bitmap) return charWidth * scale;
+
+  const charHeight = 11;
+  const maxCol = charWidth - 1;
+  const destWidth = Math.round(charWidth * scale);
+  const destHeight = Math.round(charHeight * scale);
+  const originX = Math.round(x);
+  const originY = Math.round(y);
+
+  for (let dy = 0; dy < destHeight; dy++) {
+    const row = Math.min(charHeight - 1, Math.floor(dy / scale));
+    for (let dx = 0; dx < destWidth; dx++) {
+      const col = Math.min(charWidth - 1, Math.floor(dx / scale));
+      if (!(bitmap[row] & (1 << (maxCol - col)))) continue;
+
+      const px = originX + dx;
+      const py = originY + dy;
+      if (px < 0 || px >= width || py < 0 || py >= height) continue;
+
+      const offset = (py * width + px) * 4;
+      buffer[offset] = color.b;
+      buffer[offset + 1] = color.g;
+      buffer[offset + 2] = color.r;
+      buffer[offset + 3] = color.a;
+    }
+  }
+  return charWidth * scale;
+}
+
+/**
+ * Draw an X glyph centered on (cx, cy), matching the tray's maxed-out icon
+ */
+function drawXGlyph(buffer, width, height, cx, cy, radius, thickness, color) {
+  const halfThickness = thickness / 2;
+  const steps = Math.max(1, Math.round(radius * 2));
+
+  for (let i = 0; i <= steps; i++) {
+    const offset = -radius + (i / steps) * radius * 2;
+    const x = cx + offset;
+    fillRect(buffer, width, height, x - halfThickness, cy + offset - halfThickness, thickness, thickness, color);
+    fillRect(buffer, width, height, x - halfThickness, cy - offset - halfThickness, thickness, thickness, color);
+  }
+}
+
+/**
+ * Draw one half of the taskbar icon: a colored panel with the percentage on it
+ */
+function drawTaskbarPanel(buffer, size, panelX, panelWidth, percent, bgColor) {
+  fillRect(buffer, size, size, panelX, 0, panelWidth, size, bgColor);
+
+  const white = { r: 255, g: 255, b: 255, a: 255 };
+
+  // 99%+ shows an X instead of a number, same as the tray icons
+  if (percent >= 99) {
+    const radius = (panelWidth - TASKBAR_PANEL_PADDING * 2) / 2.6;
+    drawXGlyph(buffer, size, size, panelX + panelWidth / 2, size / 2, radius, Math.max(2, radius / 2.5), white);
+    return;
+  }
+
+  const text = Math.round(percent).toString();
+  const useNarrow = text.length >= 3;
+  const glyphWidth = useNarrow ? 6 : 8;
+  const gapUnits = 1;
+
+  // Scale the digits to fill the panel width, capped so a single digit doesn't
+  // balloon out of proportion with the two-digit case.
+  const units = text.length * glyphWidth + (text.length - 1) * gapUnits;
+  const usableWidth = panelWidth - TASKBAR_PANEL_PADDING * 2;
+  const scale = Math.min(usableWidth / units, TASKBAR_MAX_GLYPH_SCALE);
+
+  let x = panelX + (panelWidth - units * scale) / 2;
+  const y = (size - 11 * scale) / 2;
+
+  for (const char of text) {
+    drawCharScaled(buffer, size, size, char, x, y, scale, white, useNarrow);
+    x += (glyphWidth + gapUnits) * scale;
+  }
+}
+
+/**
+ * Generate the Windows taskbar icon: session usage on the left half,
+ * weekly usage on the right half, each on its own threshold-colored panel.
+ * @param {number} sessionPercent - 5-hour session usage percentage
+ * @param {number} weeklyPercent - 7-day usage percentage
+ * @param {number} warnThreshold - Percentage at which panels turn amber
+ * @param {number} dangerThreshold - Percentage at which panels turn red
+ * @returns {NativeImage} Generated taskbar icon
+ */
+function generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dangerThreshold) {
+  const size = TASKBAR_ICON_SIZE;
+  const panelWidth = size / 2;
+  const buffer = Buffer.alloc(size * size * 4);
+  const maxedColor = { r: 220, g: 53, b: 69 }; // #dc3545, same red as the tray X
+
+  const sessionColor = sessionPercent >= 99
+    ? maxedColor
+    : getBackgroundColor(sessionPercent, true, warnThreshold, dangerThreshold);
+  const weeklyColor = weeklyPercent >= 99
+    ? maxedColor
+    : getBackgroundColor(weeklyPercent, false, warnThreshold, dangerThreshold);
+
+  drawTaskbarPanel(buffer, size, 0, panelWidth, sessionPercent, sessionColor);
+  drawTaskbarPanel(buffer, size, panelWidth, panelWidth, weeklyPercent, weeklyColor);
+
+  // Divider keeps the two halves distinguishable when both panels share a color.
+  // Kept at 3px on the 128px master so it survives the downscale to 24px.
+  fillRect(buffer, size, size, panelWidth - 1.5, 0, 3, size, TASKBAR_DIVIDER_COLOR);
+
+  return nativeImage.createFromBuffer(buffer, { width: size, height: size });
+}
+
+/**
+ * Tracks what's currently drawn on mainWindow's taskbar icon so repeated
+ * calls that would produce the same result skip the native setIcon() call
+ * entirely, instead of hammering it every poll (every 15s in the stress
+ * test config) regardless of whether the displayed percentages actually
+ * changed. Same class of fix as the isAlwaysOnTop()-check-before-reasserting
+ * guard already applied to the periodic always-on-top interval, which
+ * measurably correlated with mainWindow's taskbar icon degrading over time.
+ * 'default' means resetTaskbarIcon() drew the plain app icon; any other
+ * value is the key string built from the last-drawn stats icon's inputs.
+ */
+let currentTaskbarIconKey = null;
+
+/**
+ * Restore the bundled application icon on the taskbar button
+ */
+function resetTaskbarIcon() {
+  if (process.platform !== 'win32') return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (currentTaskbarIconKey === 'default') return;
+
+  try {
+    mainWindow.setIcon(path.join(__dirname, 'assets/icon.ico'));
+    currentTaskbarIconKey = 'default';
+  } catch (error) {
+    console.error('Failed to reset taskbar icon:', error);
+    logger.debugLog(`Failed to reset taskbar icon: ${error.message}`);
+  }
+}
+
+/**
+ * Update the Windows taskbar icon with the current session and weekly usage.
+ * Windows only — setIcon() is a no-op on macOS, and Linux desktops generally
+ * take the taskbar icon from the .desktop entry rather than the window.
+ * @param {Object} usageData - Usage data object containing session and weekly percentages
+ */
+function updateTaskbarIcon(usageData) {
+  if (process.platform !== 'win32') return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  // "Hide from taskbar" removes the taskbar button entirely, so there is nothing
+  // to draw stats on — keep the plain app icon for the alt-tab entry instead.
+  const hiddenFromTaskbar = store.get('settings.minimizeToTray', false);
+  if (hiddenFromTaskbar || !store.get('settings.showTaskbarStats', false)) {
+    resetTaskbarIcon();
+    return;
+  }
+
+  // Keep the default icon until there is something real to draw
+  if (!usageData) return;
+
+  const warnThreshold = store.get('settings.warnThreshold', 75);
+  const dangerThreshold = store.get('settings.dangerThreshold', 90);
+  const sessionPercent = usageData?.five_hour?.utilization || 0;
+  const weeklyPercent = usageData?.seven_day?.utilization || 0;
+
+  // Thresholds affect the drawn color, so they're part of the key too -
+  // otherwise a threshold change with unchanged percentages would be missed.
+  const iconKey = `${sessionPercent}|${weeklyPercent}|${warnThreshold}|${dangerThreshold}`;
+  if (iconKey === currentTaskbarIconKey) {
+    logger.debugLog(`Skipping taskbar icon redraw, unchanged: ${iconKey}`);
+    return;
+  }
+
+  try {
+    mainWindow.setIcon(generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dangerThreshold));
+    logger.debugLog(`Redrew taskbar icon: ${currentTaskbarIconKey ?? '(none)'} -> ${iconKey}`);
+    currentTaskbarIconKey = iconKey;
+  } catch (error) {
+    console.error('Failed to update taskbar icon:', error);
+    logger.debugLog(`Failed to update taskbar icon: ${error.message}`);
+  }
+}
 
 function createTray() {
   // Respect the tray stats setting even when createTray is called from generic refresh paths.
@@ -707,11 +1212,13 @@ function createTray() {
     
     // Create Weekly tray icon FIRST (left position, blue)
     weeklyTray = new Tray(staticIconPath);
-    weeklyTray.setToolTip('Weekly Usage');
-    
+    weeklyTray.setToolTip(profileName ? `Weekly Usage — ${profileName}` : 'Weekly Usage');
+
     // Create Session tray icon SECOND (right position, purple)
     sessionTray = new Tray(staticIconPath);
-    sessionTray.setToolTip('Session Usage');
+    sessionTray.setToolTip(profileName ? `Session Usage — ${profileName}` : 'Session Usage');
+
+    logger.log('Tray created (session + weekly icons)');
 
     const contextMenu = Menu.buildFromTemplate([
       {
@@ -732,7 +1239,13 @@ function createTray() {
       {
         label: 'Log Out',
         click: async () => {
+          try { await sessionStarter.disableForAccountChange(); }
+          catch (error) {
+            if (Notification.isSupported()) new Notification({ title: 'Could not pause session starter', body: error.message }).show();
+            return;
+          }
           store.delete('sessionKey');
+          store.delete('sessionKey_encrypted');
           store.delete('organizationId');
           // Clear all Claude.ai cookies and session storage
           const cookies = await session.defaultSession.cookies.get({ url: 'https://claude.ai' });
@@ -752,7 +1265,16 @@ function createTray() {
       {
         label: 'Exit',
         click: () => {
-          app.quit();
+          // Bypasses the normal close/before-quit/window-all-closed event
+          // cascade entirely rather than relying on it to resolve correctly —
+          // force-destroy everything directly, then hard-exit the process.
+          captureWindowVisibilityOnExit();
+          isQuitting = true;
+          destroyTrayIcons();
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.destroy();
+          }
+          app.exit(0);
         }
       }
     ]);
@@ -778,14 +1300,19 @@ function createTray() {
     });
   } catch (error) {
     console.error('Failed to create tray:', error);
+    logger.debugLog(`Failed to create tray: ${error.message}`);
   }
 }
 
 function destroyTrayIcons() {
   // Centralized tray cleanup keeps Linux appindicator hosts from showing stale icons.
   const trays = [sessionTray, weeklyTray];
+  const hadLiveTray = trays.some((t) => t && !t.isDestroyed());
   sessionTray = null;
   weeklyTray = null;
+  // Only log a real teardown, not every no-op call (this is called defensively
+  // from several paths even when there's nothing to destroy).
+  if (hadLiveTray) logger.log('Tray destroyed');
 
   for (const tray of trays) {
     if (!tray || tray.isDestroyed()) continue;
@@ -802,12 +1329,14 @@ function destroyTrayIcons() {
       }
     } catch (error) {
       console.error('Failed to clear tray icon:', error);
+      logger.debugLog(`Failed to clear tray icon: ${error.message}`);
     }
 
     try {
       tray.destroy();
     } catch (error) {
       console.error('Failed to destroy tray icon:', error);
+      logger.debugLog(`Failed to destroy tray icon: ${error.message}`);
     }
   }
 }
@@ -898,7 +1427,7 @@ function updateTrayIcon(usageData) {
     }
     if (weeklyTray && !weeklyTray.isDestroyed()) {
       weeklyTray.setImage(weeklyIcon);
-      let weeklyTooltip = `Weekly: ${Math.round(weeklyPercent)}%`;
+      let weeklyTooltip = profileName ? `${profileName} — Weekly: ${Math.round(weeklyPercent)}%` : `Weekly: ${Math.round(weeklyPercent)}%`;
       const weeklyResetTime = formatResetTime(weeklyResetsAt, timeFormat, true);
       if (weeklyResetTime) {
         weeklyTooltip += `\nResets: ${weeklyResetTime}`;
@@ -916,7 +1445,7 @@ function updateTrayIcon(usageData) {
     }
     if (sessionTray && !sessionTray.isDestroyed()) {
       sessionTray.setImage(sessionIcon);
-      let sessionTooltip = `Session: ${Math.round(sessionPercent)}%`;
+      let sessionTooltip = profileName ? `${profileName} — Session: ${Math.round(sessionPercent)}%` : `Session: ${Math.round(sessionPercent)}%`;
       const sessionResetTime = formatResetTime(sessionResetsAt, timeFormat, false);
       if (sessionResetTime) {
         sessionTooltip += `\nResets: ${sessionResetTime}`;
@@ -925,34 +1454,61 @@ function updateTrayIcon(usageData) {
     }
   } catch (error) {
     console.error('Failed to update tray icons:', error);
+    // console.error only reaches devtools, which the stress-test runs don't
+    // have open - mirror it into the debug log so an icon-draw failure
+    // during the corruption investigation actually leaves a trace instead
+    // of a clean-looking log next to a corrupted icon.
+    logger.debugLog(`Failed to update tray icons: ${error.message}`);
   }
 }
 
-
-// IPC Handlers
-ipcMain.handle('get-credentials', () => {
-  let sessionKey = null;
-  // Try safeStorage first (OS keychain)
+// Retrieve the stored session key, decrypting if it was saved encrypted.
+// Two distinct failure modes, handled differently (credit: adihebbalae,
+// PR #110, for identifying both):
+// 1. Encryption is available but no encrypted key exists — the key was
+//    saved back when encryption wasn't available and landed in the legacy
+//    plain `sessionKey` field instead. Fall back to that field: this is a
+//    real, valid key, just stored under the old scheme.
+// 2. Encryption is available, an encrypted key exists, but decryptString()
+//    throws — this is genuine corrupted/unreadable ciphertext (DPAPI key
+//    changed after an OS reinstall, a config folder copied to a different
+//    machine, etc). There's no plain-text key hiding here to fall back to;
+//    that case is already handled by branch 1 above. Returning the raw
+//    ciphertext as if it were a usable key would just change what the
+//    failure looks like (fails against the API instead of cleanly
+//    prompting re-login) without actually fixing anything — so instead,
+//    clear the corrupted entry and return null, which already correctly
+//    routes to the login screen elsewhere in the app.
+function getStoredSessionKey(context = '') {
   if (safeStorage.isEncryptionAvailable()) {
     const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key:', err.message);
-      }
+    if (!encrypted) return store.get('sessionKey') || null;
+    try {
+      return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
+    } catch (err) {
+      console.error(`[Keychain] Failed to decrypt session key${context}, clearing corrupted entry:`, err.message);
+      store.delete('sessionKey_encrypted');
+      return null;
     }
-  } else {
-    // Fallback: plain storage (legacy or safeStorage unavailable)
-    sessionKey = store.get('sessionKey');
   }
+  // Fallback: plain storage (legacy or safeStorage unavailable)
+  return store.get('sessionKey') || null;
+}
+
+// IPC Handlers
+ipcMain.handle('get-profile-name', () => profileName);
+
+ipcMain.handle('get-credentials', () => {
   return {
-    sessionKey,
+    sessionKey: getStoredSessionKey(),
     organizationId: store.get('organizationId')
   };
 });
 
 ipcMain.handle('save-credentials', async (event, { sessionKey, organizationId }) => {
+  if (store.get('organizationId') && organizationId !== store.get('organizationId')) {
+    await sessionStarter.disableForAccountChange();
+  }
   // Store session key in OS keychain if available
   if (safeStorage.isEncryptionAvailable()) {
     const encrypted = safeStorage.encryptString(sessionKey);
@@ -971,6 +1527,7 @@ ipcMain.handle('save-credentials', async (event, { sessionKey, organizationId })
 });
 
 ipcMain.handle('delete-credentials', async () => {
+  await sessionStarter.disableForAccountChange();
   store.delete('sessionKey');
   store.delete('sessionKey_encrypted');
   store.delete('organizationId');
@@ -990,7 +1547,7 @@ ipcMain.handle('delete-credentials', async () => {
 
 // Validate a sessionKey by fetching org ID via hidden BrowserWindow
 ipcMain.handle('validate-session-key', async (event, sessionKey) => {
-  debugLog('Validating session key:', sessionKey.substring(0, 20) + '...');
+  debugLog(`Validating session key (length: ${sessionKey ? sessionKey.length : 0})`);
   try {
     // Set the cookie in Electron's session first
     await setSessionCookie(sessionKey);
@@ -1065,7 +1622,18 @@ ipcMain.on('close-window', () => {
 
 ipcMain.on('resize-window', (event, height) => {
   if (mainWindow) {
-    mainWindow.setContentSize(WIDGET_WIDTH, height);
+    // setContentSize is a native binding requiring integer pixels — a stray
+    // float or NaN from any renderer call site throws an uncaught exception
+    // in the main process, which crashes the entire app (not just the
+    // renderer). Guarding here protects every current and future caller in
+    // one place, not just whichever call site happened to send bad input
+    // this time. See chat discussion Sep 2026.
+    const safeHeight = Math.round(Number(height));
+    if (!Number.isFinite(safeHeight) || safeHeight <= 0) {
+      logger.debugLog(`resize-window: rejected invalid height ${height}`);
+      return;
+    }
+    mainWindow.setContentSize(WIDGET_WIDTH, safeHeight);
   }
 });
 
@@ -1136,6 +1704,11 @@ ipcMain.on('set-compact-mode', (event, compact) => {
 });
 
 // Settings handlers
+ipcMain.handle('get-session-starter', () => sessionStarter.refreshCloud());
+ipcMain.handle('save-session-starter', async (event, config) => {
+  try { return { success: true, snapshot: await sessionStarter.save(config) }; }
+  catch (error) { return { success: false, error: error.message, snapshot: sessionStarter.snapshot() }; }
+});
 ipcMain.handle('get-settings', () => {
   return {
     autoStart: store.get('settings.autoStart', false),
@@ -1152,11 +1725,17 @@ ipcMain.handle('get-settings', () => {
     graphVisible: store.get('settings.graphVisible', false),
     expandedOpen: store.get('settings.expandedOpen', false),
     compactSpendOpen: store.get('settings.compactSpendOpen', false),
-    showTrayStats: store.get('settings.showTrayStats', false)
+    showTrayStats: store.get('settings.showTrayStats', false),
+    showTaskbarStats: store.get('settings.showTaskbarStats', false)
   };
 });
 
-ipcMain.handle('save-settings', (event, settings) => {
+ipcMain.handle('save-settings', async (event, settings) => {
+  // Full snapshot on every save, not just a "settings saved" marker - lets
+  // consecutive debug-log entries be diffed by hand to see exactly what
+  // changed between one Done click and the next.
+  logger.debugLog(`Settings saved: ${JSON.stringify(settings)}`);
+
   const supportsLoginItems = process.platform !== 'linux';
   const autoStart = supportsLoginItems ? settings.autoStart : false;
 
@@ -1179,6 +1758,7 @@ ipcMain.handle('save-settings', (event, settings) => {
     store.set('settings.compactSpendOpen', settings.compactSpendOpen);
   }
   store.set('settings.showTrayStats', settings.showTrayStats);
+  store.set('settings.showTaskbarStats', settings.showTaskbarStats);
 
   const isPortable = process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_FILE;
 
@@ -1202,12 +1782,39 @@ ipcMain.handle('save-settings', (event, settings) => {
     mainWindow.setAlwaysOnTop(settings.alwaysOnTop, 'floating');
   }
 
+  // Experimental, tied to the taskbar-icon-corruption investigation: setSkipTaskbar
+  // above and the tray destroy/recreate below are two separate native Windows
+  // shell icon-registration calls, previously fired back-to-back in the same
+  // tick with zero gap. Theory is Explorer's icon cache can't always keep up
+  // with two rapid consecutive calls.
+  //
+  // Status as of Sep 2026: kept in indefinitely. It's cheap (unnoticeable to
+  // the user) and correlates with clean test runs so far, but "correlates
+  // with one clean run" is not confirmation - we do not know this is the
+  // actual fix, and haven't done a controlled before/after test (repro
+  // without it, then confirm clean with it) the way other fixes from this
+  // same investigation were validated. Do not read its presence as proof
+  // the root cause is understood.
+  //
+  // The real test is time: if the corruption stays gone for an extended
+  // period (months) with this in place, that's supporting evidence, not
+  // proof, since plenty of other changes landed in the same window. The
+  // only way to actually confirm causation is to deliberately remove this
+  // later and watch for recurrence - if corruption comes back, this was
+  // load-bearing; if it doesn't, something else fixed it and this can stay
+  // removed. Don't strip it out casually without doing that comparison.
+  const TRAY_SETTINGS_APPLY_DELAY_MS = 200;
+  logger.debugLog(`Pausing ${TRAY_SETTINGS_APPLY_DELAY_MS}ms between setSkipTaskbar and tray icon update`);
+  await new Promise((resolve) => setTimeout(resolve, TRAY_SETTINGS_APPLY_DELAY_MS));
+  logger.debugLog('Pause complete, proceeding to tray icon update');
+
+  const latestUsageData = store.get('latestUsageData');
+
   if (!settings.showTrayStats) {
     // Remove tray icons immediately when the setting is turned off from the UI.
     destroyTrayIcons();
   } else {
     // Refresh tray icons immediately with new threshold settings
-    const latestUsageData = store.get('latestUsageData');
     if (latestUsageData) {
       updateTrayIcon(latestUsageData);
     } else {
@@ -1215,6 +1822,10 @@ ipcMain.handle('save-settings', (event, settings) => {
       createTray();
     }
   }
+
+  // Apply the taskbar icon change (or restore the app icon) without waiting
+  // for the next refresh. Handles threshold changes too.
+  updateTaskbarIcon(latestUsageData);
 
   return true;
 });
@@ -1250,32 +1861,42 @@ ipcMain.handle('detect-session-key', async () => {
 
     let resolved = false;
 
-    // Security: restrict navigation to trusted domains only
-    const allowedLoginDomains = [
-      'claude.ai',
-      'accounts.google.com',
-      'appleid.apple.com',
-      'login.microsoftonline.com'
-    ];
+    // Security: navigation allowlist. Combines the fixed LOGIN_ALLOWED_DOMAINS
+    // list above with any additional domains from the user's own whitelist
+    // (see src/domain-whitelist.js) — loaded fresh per login-window open so a
+    // --whitelist-add made between launches takes effect without a restart of
+    // the whole app, just of the login window itself.
+    const userWhitelist = loadWhitelist(baseUserDataPath);
 
-    loginWin.webContents.on('will-navigate', (event, url) => {
-      try {
-        const hostname = new URL(url).hostname;
-        const isAllowed = allowedLoginDomains.some(domain =>
-          hostname === domain || hostname.endsWith('.' + domain)
-        );
-        if (!isAllowed) {
+    // Sign-in URLs carry session tokens in their query strings; log the host only.
+    const hostOf = (url) => {
+      try { return new URL(url).host; } catch (err) { return '(invalid URL)'; }
+    };
+
+    // One trust decision for the login window and any sign-in popup it opens.
+    const checkLoginUrl = (url) => {
+      let hostname;
+      try { hostname = new URL(url).hostname; } catch (err) { return { allowed: false }; }
+      if (GOOGLE_ACCOUNTS_HOST.test(hostname)) return { allowed: true, source: 'builtin' };
+      return isHostnameAllowed(hostname, LOGIN_ALLOWED_DOMAINS, userWhitelist);
+    };
+
+    const guardNavigation = (win) => {
+      win.webContents.on('will-navigate', (event, url) => {
+        const result = checkLoginUrl(url);
+        if (!result.allowed) {
           event.preventDefault();
-          console.warn('[Security] Blocked login navigation to untrusted domain:', url);
+          console.warn('[Security] Blocked login navigation to untrusted domain:', hostOf(url));
         } else {
+          if (result.source === 'user') {
+            console.log(`[Security] Allowed navigation to ${hostOf(url)} (user-whitelisted via "${result.matchedEntry}")`);
+          }
           // Update title bar to show current URL (read-only)
-          loginWin.setTitle(`Claude Login - ${url}`);
+          win.setTitle(`Claude Login - ${url}`);
         }
-      } catch (err) {
-        event.preventDefault();
-        console.warn('[Security] Blocked login navigation with invalid URL:', url);
-      }
-    });
+      });
+    };
+    guardNavigation(loginWin);
 
     // Update title on OAuth redirects and in-page navigation
     loginWin.webContents.on('did-navigate', (event, url) => {
@@ -1286,10 +1907,38 @@ ipcMain.handle('detect-session-key', async () => {
       loginWin.setTitle(`Claude Login - ${url}`);
     });
 
-    // Security: block popup windows from login page
-    loginWin.webContents.setWindowOpenHandler(() => {
-      console.warn('[Security] Blocked popup window attempt from login page');
+    // Security: popups only toward trusted domains. claude.ai runs its
+    // provider sign-in (Google) in a popup, and denying every popup surfaced
+    // on the page as a bare "error during login". about:blank is allowed
+    // because a sign-in popup is often opened blank and pointed at the
+    // provider afterwards; the did-navigate check below closes it if it lands
+    // anywhere untrusted, and it may not open popups of its own.
+    loginWin.webContents.setWindowOpenHandler(({ url }) => {
+      if (url === 'about:blank' || checkLoginUrl(url).allowed) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            parent: loginWin,
+            width: 500,
+            height: 650,
+            autoHideMenuBar: true,
+            webPreferences: { nodeIntegration: false, contextIsolation: true }
+          }
+        };
+      }
+      console.warn('[Security] Blocked popup window from login page:', hostOf(url));
       return { action: 'deny' };
+    });
+
+    loginWin.webContents.on('did-create-window', (popup) => {
+      guardNavigation(popup);
+      popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      popup.webContents.on('did-navigate', (event, url) => {
+        if (!checkLoginUrl(url).allowed) {
+          console.warn('[Security] Closed login popup on untrusted domain:', hostOf(url));
+          popup.close();
+        }
+      });
     });
 
     // Listen for sessionKey cookie being set after login
@@ -1450,19 +2099,7 @@ function isNewerPreRelease(remote, local) {
 
 ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Use the same credential retrieval logic as get-credentials
-  let sessionKey = null;
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key:', err.message);
-      }
-    }
-  } else {
-    sessionKey = store.get('sessionKey');
-  }
+  const sessionKey = getStoredSessionKey();
 
   const organizationId = store.get('organizationId');
 
@@ -1501,35 +2138,84 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Fetch endpoints sequentially using a single reused BrowserWindow.
   // This reduces memory overhead compared to creating 3 separate windows.
   // Usage is always required; overage and prepaid are conditional based on UI state.
+  //
+  // Retry policy: transient rate-limit responses (HTTP 429) are retried with
+  // exponential backoff (1s, 5s, 30s, each ±25% jitter) — 1 initial attempt
+  // plus up to MAX_RETRIES retries, 4 attempts total. Session-bound blocks
+  // (Cloudflare challenge, expired cookie, unexpected HTML) are NOT retried —
+  // they would just waste time and rate-limit budget on the same failure.
+  // (credit: mtspl, PR #114, for the retry design)
+  const MAX_RETRIES = 3;
+  const BASE_BACKOFF_MS = [1000, 5000, 30000];
   let usageResult, overageResult, prepaidResult;
-  
-  try {
-    const results = await fetchMultipleViaWindow(urls);
-    
-    // Always have usage result (first in array)
-    usageResult = { status: 'fulfilled', value: results[0] };
-    
-    // Conditionally map overage/prepaid results
-    if (shouldFetchExtended) {
-      overageResult = { status: 'fulfilled', value: results[1] };
-      prepaidResult = { status: 'fulfilled', value: results[2] };
-    } else {
-      // Mark as skipped (not an error, just not fetched)
-      overageResult = { status: 'skipped', reason: 'UI panel not visible' };
-      prepaidResult = { status: 'skipped', reason: 'UI panel not visible' };
+
+  let attempt = 0;
+  while (attempt <= MAX_RETRIES) {
+    try {
+      const results = await fetchMultipleViaWindow(urls);
+
+      // Always have usage result (first in array)
+      usageResult = { status: 'fulfilled', value: results[0] };
+
+      // Conditionally map overage/prepaid results
+      if (shouldFetchExtended) {
+        overageResult = { status: 'fulfilled', value: results[1] };
+        prepaidResult = { status: 'fulfilled', value: results[2] };
+      } else {
+        // Mark as skipped (not an error, just not fetched)
+        overageResult = { status: 'skipped', reason: 'UI panel not visible' };
+        prepaidResult = { status: 'skipped', reason: 'UI panel not visible' };
+      }
+      break;
+    } catch (error) {
+      const isRateLimit = error.message.startsWith('RateLimited');
+      const isSessionBound = error.message.startsWith('CloudflareBlocked')
+        || error.message.startsWith('CloudflareChallenge')
+        || error.message.startsWith('UnexpectedHTML');
+
+      // Session-bound errors: do not retry — propagate immediately so the
+      // caller can prompt re-login. Rate-limited: retry with backoff.
+      if (!isRateLimit || isSessionBound) {
+        usageResult = { status: 'rejected', reason: error };
+        overageResult = { status: 'rejected', reason: error };
+        prepaidResult = { status: 'rejected', reason: error };
+        break;
+      }
+
+      if (attempt >= MAX_RETRIES) {
+        debugLog(`[Retry] Exhausted ${MAX_RETRIES} retries on rate-limit`);
+        usageResult = { status: 'rejected', reason: error };
+        overageResult = { status: 'rejected', reason: error };
+        prepaidResult = { status: 'rejected', reason: error };
+        break;
+      }
+
+      const base = BASE_BACKOFF_MS[attempt];
+      const jitter = base * (0.75 + Math.random() * 0.5); // ±25%
+      debugLog(`[Retry] Rate-limited (attempt ${attempt + 1}/${MAX_RETRIES}); sleeping ${Math.round(jitter)}ms`);
+      await new Promise((r) => setTimeout(r, jitter));
+      attempt++;
     }
-  } catch (error) {
-    // If any fetch fails, determine which one and set appropriate result statuses
-    // For now, if the batch fails, treat usage as failed (required endpoint)
-    usageResult = { status: 'rejected', reason: error };
-    overageResult = { status: 'rejected', reason: error };
-    prepaidResult = { status: 'rejected', reason: error };
   }
 
   // Usage endpoint is mandatory
   if (usageResult.status === 'rejected') {
     const error = usageResult.reason;
     debugLog('API request failed:', error.message);
+    // Baseline-level (not gated by DEBUG) so a plain, non-debug soak test still
+    // captures fetch failures - this is the actual signal for correlating fetch
+    // errors with the taskbar/AUMID corruption investigation. Some error types
+    // (InvalidJSON/CloudflareBlocked/CloudflareChallenge/UnexpectedHTML/RateLimited)
+    // embed up to 200 chars of raw page text in their message (this is what
+    // produced the "Salt Lake City / Cloudflare" page-diagram text seen in an
+    // earlier console dump) - strip those to just the category. Other types
+    // (LoadFailed's Chromium error code, timeouts, SessionExpired) carry no page
+    // text and stay in full, since e.g. the QUIC error code is exactly the kind
+    // of detail worth keeping.
+    const PAGE_TEXT_ERROR_TYPES = ['InvalidJSON', 'CloudflareBlocked', 'CloudflareChallenge', 'UnexpectedHTML', 'RateLimited'];
+    const errorType = error.message.split(':')[0];
+    const fetchFailureSummary = PAGE_TEXT_ERROR_TYPES.includes(errorType) ? errorType : error.message;
+    logger.log(`Fetch failed: ${fetchFailureSummary}`);
     const isBlocked = error.message.startsWith('CloudflareBlocked')
       || error.message.startsWith('CloudflareChallenge')
       || error.message.startsWith('UnexpectedHTML');
@@ -1541,6 +2227,12 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
       }
       throw new Error('SessionExpired');
     }
+    // A RateLimited error that exhausted its retries (or any other
+    // unclassified error) falls through here and propagates as-is, keeping
+    // the session intact — the user is not forced to re-login for a
+    // transient upstream throttle. The error message starts with
+    // 'RateLimited:' so the renderer can surface a distinct indicator
+    // rather than treating it like a session expiry.
     throw error;
   }
 
@@ -1555,9 +2247,23 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
   // Merge overage spending data into data.extra_usage
   if (overageResult.status === 'fulfilled' && overageResult.value) {
     const overage = overageResult.value;
-    const limit = overage.monthly_credit_limit ?? overage.spend_limit_amount_cents;
-    const used = overage.used_credits ?? overage.balance_cents;
-    const enabled = overage.is_enabled !== undefined ? overage.is_enabled : (limit != null);
+    // /usage already carries the signed-in member's own extra_usage figures
+    // (monthly_limit / used_credits, minor units). /overage_spend_limit is the
+    // organization-wide cap, so on Enterprise/Team seats it reports the org
+    // total instead of the individual limit shown on claude.ai. Prefer the
+    // member figures whenever /usage provides a numeric monthly_limit, and
+    // fall back to the org endpoint only when it does not.
+    const personal = data.extra_usage;
+    const hasPersonal = !!personal && typeof personal.monthly_limit === 'number';
+    const limit = hasPersonal
+      ? personal.monthly_limit
+      : (overage.monthly_credit_limit ?? overage.spend_limit_amount_cents);
+    const used = hasPersonal
+      ? personal.used_credits
+      : (overage.used_credits ?? overage.balance_cents);
+    const enabled = hasPersonal
+      ? personal.is_enabled !== false
+      : (overage.is_enabled !== undefined ? overage.is_enabled : (limit != null));
 
     if (enabled && typeof limit === 'number' && limit > 0 && typeof used === 'number') {
       data.extra_usage = {
@@ -1566,7 +2272,7 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
         used_cents: used,
         limit_cents: limit,
         is_enabled: true,
-        currency: overage.currency || 'USD',
+        currency: (hasPersonal && personal.currency) || overage.currency || 'USD',
       };
     } else if (!enabled) {
       // Extra usage is off — still pass the flag so the renderer can show status
@@ -1617,11 +2323,29 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
 
   storeUsageHistory(data);
 
+  // Force the meter to 100%/critical if credit spend increased since the last
+  // poll while the reported percentage is already near the ceiling — see
+  // detectActiveCreditSpend for the full reasoning. Deliberately AFTER
+  // storeUsageHistory(), not before: the history graph keeps the true
+  // reported percentages, only the live display/icons get the correction.
+  // The comparison value is per-organization, since credit spend is
+  // org-scoped, not per-user or per-installation.
+  {
+    const organizationId = store.get('organizationId');
+    const creditSpendKey = organizationId
+      ? `previousUsedCents_${organizationId}`
+      : 'previousUsedCents';
+    const previousUsedCents = store.get(creditSpendKey, null);
+    const result = detectActiveCreditSpend(data, previousUsedCents);
+    store.set(creditSpendKey, result.usedCents);
+  }
+
   // Store latest usage data for settings refresh
   store.set('latestUsageData', data);
 
-  // Update tray icon with current usage data
+  // Update tray and taskbar icons with current usage data
   updateTrayIcon(data);
+  updateTaskbarIcon(data);
 
   // Keep the compact window sized correctly if the Fable row just appeared/disappeared
   if (mainWindow && !mainWindow.isDestroyed() && store.get('settings.compactMode', false)) {
@@ -1645,19 +2369,7 @@ ipcMain.handle('fetch-usage-data', async (event, options = {}) => {
 // App lifecycle
 app.whenReady().then(async () => {
   // Restore session cookie if we have stored credentials
-  let sessionKey = null;
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = store.get('sessionKey_encrypted');
-    if (encrypted) {
-      try {
-        sessionKey = safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-      } catch (err) {
-        console.error('[Keychain] Failed to decrypt session key on startup:', err.message);
-      }
-    }
-  } else {
-    sessionKey = store.get('sessionKey');
-  }
+  const sessionKey = getStoredSessionKey(' on startup');
 
   if (sessionKey) {
     await setSessionCookie(sessionKey);
@@ -1667,10 +2379,48 @@ app.whenReady().then(async () => {
   pruneStaleHistoryKeys();
 
   createMainWindow();
+  sessionStarter.start();
+  powerMonitor.on('resume', () => sessionStarter.tick().catch(() => {}));
   // Avoid creating temporary tray icons during startup when tray stats are disabled.
   if (store.get('settings.showTrayStats', false)) {
     createTray();
   }
+
+  // Restore the window to whatever state it was last exited in, instead of
+  // always starting fully visible. Only trusted when there's a live tray
+  // icon this run to actually verify - if tray creation failed or is
+  // disabled, always fall back to showing rather than risk a window the
+  // user has no way back into. See captureWindowVisibilityOnExit() for
+  // where this gets written.
+  const lastVisibility = store.get('state.windowVisibilityOnExit', 'normal');
+  const minimizeToTray = store.get('settings.minimizeToTray', false);
+  const showTrayStats = store.get('settings.showTrayStats', false);
+  if (lastVisibility === 'hidden' && minimizeToTray && showTrayStats && hasTrayIcon()) {
+    logger.debugLog('Restoring startup state: hidden (tray verified)');
+    // Leave the window unshown - hide() isn't needed on a window created
+    // with show: false, but calling it keeps isVisible()/state tracking
+    // consistent with the hidden-via-minimize path during the session.
+    mainWindow.hide();
+  } else if (lastVisibility === 'minimized') {
+    logger.debugLog('Restoring startup state: minimized');
+    // No show() here on purpose - it fired a native 'focus' event, which
+    // triggers showMainWindowSmart(), which triggered a 'restore' event,
+    // which called showMainWindowSmart() again and undid the minimize
+    // entirely (confirmed via debug log: the very next exit capture on
+    // that session read back isVisible=true, isMinimized=false). The
+    // window already exists (created with show: false) - minimize()
+    // alone is enough to give it a minimized taskbar presence.
+    mainWindow.minimize();
+  } else {
+    if (lastVisibility === 'hidden') {
+      logger.debugLog('Startup state was hidden but tray unavailable this run - showing window instead');
+    }
+    mainWindow.show();
+  }
+
+  // Show the last known usage on the taskbar immediately instead of waiting
+  // for the first refresh to come back.
+  updateTaskbarIcon(store.get('latestUsageData'));
 
   // Clear any stale Jump List tasks from earlier builds (the removed
   // taskbar "Center App" task). Windows caches setUserTasks() entries
@@ -1681,7 +2431,6 @@ app.whenReady().then(async () => {
   }
 
   // Apply persisted settings
-  const minimizeToTray = store.get('settings.minimizeToTray', false);
   const alwaysOnTop = store.get('settings.alwaysOnTop', true);
   if (mainWindow) {
     if (process.platform === 'darwin') {
@@ -1696,8 +2445,28 @@ app.whenReady().then(async () => {
   // (hidden window spawns, window manager shortcuts, alt-tab, etc.)
   setInterval(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
+      // Skip entirely while hidden or minimized - there's no visible z-order
+      // to defend on a window that isn't on screen, and isAlwaysOnTop() was
+      // found to read false in both states (same isVisible()-goes-false-
+      // while-minimized quirk that broke the exit-visibility capture), so
+      // without this guard the interval would keep calling setAlwaysOnTop()
+      // every 5s on a minimized/hidden window - repeated native icon-
+      // adjacent calls being exactly the pattern already correlated with
+      // taskbar icon corruption elsewhere in this codebase. Confirmed via
+      // debug log: a window restored minimized at startup drifted back to
+      // isVisible=true/isMinimized=false within ~80s with no user input,
+      // matching this interval's cadence.
+      if (!mainWindow.isVisible() || mainWindow.isMinimized()) return;
+
       const alwaysOnTopSetting = store.get('settings.alwaysOnTop', true);
-      if (alwaysOnTopSetting) {
+      // Only actually call setAlwaysOnTop() when it's genuinely needed (the
+      // window has actually been knocked off top), not unconditionally every
+      // 5 seconds regardless of state. Calling it ~720 times/hour regardless
+      // was found to correlate with the main window's taskbar icon eventually
+      // degrading to the generic Electron icon on a long-running session
+      // (see the now-reverted taskbar-stats feature) — checking first means
+      // the call only fires on actual disruptions, which should be rare.
+      if (alwaysOnTopSetting && !mainWindow.isAlwaysOnTop()) {
         mainWindow.setAlwaysOnTop(true, 'floating');
       }
     }
@@ -1721,6 +2490,9 @@ app.on('window-all-closed', () => {
 // quit apart from a click on the close button to just minimize.
 app.on('before-quit', () => {
   isQuitting = true;
+  logger.log('App quitting');
+
+  sessionStarter.stop();
 });
 
 app.on('activate', () => {

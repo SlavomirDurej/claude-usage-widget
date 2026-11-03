@@ -86,6 +86,9 @@ const elements = {
     minimizeToTrayToggle: document.getElementById('minimizeToTrayToggle'),
     alwaysOnTopToggle: document.getElementById('alwaysOnTopToggle'),
     showTrayStatsToggle: document.getElementById('showTrayStatsToggle'),
+    showTaskbarStatsToggle: document.getElementById('showTaskbarStatsToggle'),
+    taskbarStatsCol: document.getElementById('taskbarStatsCol'),
+    taskbarStatsHint: document.getElementById('taskbarStatsHint'),
     warnThreshold: document.getElementById('warnThreshold'),
     dangerThreshold: document.getElementById('dangerThreshold'),
     themeBtns: document.querySelectorAll('.theme-btn'),
@@ -94,6 +97,7 @@ const elements = {
     refreshInterval: document.getElementById('refreshInterval'),
     orgSelector: document.getElementById('orgSelector'),
     orgSelectorCol: document.getElementById('orgSelectorCol'),
+    titleBarLabel: document.getElementById('titleBarLabel'),
 
     updateBanner: document.getElementById('updateBanner'),
     updateBannerText: document.getElementById('updateBannerText'),
@@ -157,8 +161,16 @@ function populateOrgSelector(organizations, selectedOrgId) {
 async function handleOrgChange() {
     const newOrgId = elements.orgSelector.value;
     if (newOrgId && newOrgId !== credentials.organizationId) {
+        try { await window.electronAPI.saveCredentials({ ...credentials, organizationId: newOrgId }); }
+        catch (error) {
+            elements.orgSelector.value = credentials.organizationId;
+            document.getElementById('sessionStartStatus').hidden = false;
+            document.getElementById('sessionStartStatus').textContent = error.message;
+            resizeSettingsPanel();
+            return;
+        }
         credentials.organizationId = newOrgId;
-        await window.electronAPI.saveCredentials(credentials);
+        await loadSessionStarterSettings();
         // Refresh usage data with new org
         await fetchUsageData();
     }
@@ -167,6 +179,12 @@ async function handleOrgChange() {
 // Initialize
 async function init() {
     setupEventListeners();
+
+    const profileName = await window.electronAPI.getProfileName();
+    if (profileName && elements.titleBarLabel) {
+        elements.titleBarLabel.textContent = `Claude Usage — ${profileName}`;
+    }
+
     credentials = await window.electronAPI.getCredentials();
 
     // Apply saved theme and load thresholds immediately
@@ -320,7 +338,24 @@ function setupEventListeners() {
 
     // Settings close
     elements.closeSettingsBtn.addEventListener('click', async () => {
-        await saveSettings();
+        if (elements.closeSettingsBtn.disabled) return;
+        elements.closeSettingsBtn.disabled = true;
+        elements.closeSettingsBtn.textContent = 'Saving…';
+        document.querySelectorAll('.session-starter input, .session-starter select').forEach(input => { input.disabled = true; });
+        try {
+            await saveSessionStarterSettings();
+            await saveSettings();
+        } catch (error) {
+            document.getElementById('sessionStartStatus').hidden = false;
+            document.getElementById('sessionStartStatus').textContent = error.message;
+            document.getElementById('sessionStartStatus').classList.add('error');
+            resizeSettingsPanel();
+            return;
+        } finally {
+            elements.closeSettingsBtn.disabled = false;
+            elements.closeSettingsBtn.textContent = 'Save';
+            document.querySelectorAll('.session-starter input, .session-starter select').forEach(input => { input.disabled = false; });
+        }
         elements.settingsOverlay.style.display = 'none';
         if (_settingsOpenedFromCompact) {
             _settingsOpenedFromCompact = false;
@@ -336,7 +371,14 @@ function setupEventListeners() {
     });
 
     elements.logoutBtn.addEventListener('click', async () => {
-        await window.electronAPI.deleteCredentials();
+        try { await window.electronAPI.deleteCredentials(); }
+        catch (error) {
+            document.getElementById('sessionStartStatus').hidden = false;
+            document.getElementById('sessionStartStatus').textContent = `Could not log out: ${error.message}`;
+            document.getElementById('sessionStartStatus').classList.add('error');
+            resizeSettingsPanel();
+            return;
+        }
         credentials = { sessionKey: null, organizationId: null };
         elements.settingsOverlay.style.display = 'none';
         showLoginRequired();
@@ -355,20 +397,15 @@ function setupEventListeners() {
         });
     });
 
-    // Prevent accidental app hiding: bidirectional coupling between Hide from Taskbar and Show Tray Stats
-    // If user enables "Hide from Taskbar", automatically enable "Show Tray Stats" (ensures tray icon is visible)
-    elements.minimizeToTrayToggle.addEventListener('change', () => {
-        if (elements.minimizeToTrayToggle.checked && !elements.showTrayStatsToggle.checked) {
-            elements.showTrayStatsToggle.checked = true;
-        }
-    });
-
-    // If user disables "Show Tray Stats", automatically disable "Hide from Taskbar" (prevents app from being completely hidden)
-    elements.showTrayStatsToggle.addEventListener('change', () => {
-        if (!elements.showTrayStatsToggle.checked && elements.minimizeToTrayToggle.checked) {
-            elements.minimizeToTrayToggle.checked = false;
-        }
-    });
+    // Show tray stats / Show taskbar stats / Hide from taskbar are a single
+    // three-way relationship. All three listeners funnel into one function
+    // (applyTrayTaskbarRules, defined below) instead of each toggle reaching
+    // into the others directly - one place decides the resulting state.
+    elements.showTrayStatsToggle.addEventListener('change', () => applyTrayTaskbarRules('tray'));
+    if (elements.showTaskbarStatsToggle) {
+        elements.showTaskbarStatsToggle.addEventListener('change', () => applyTrayTaskbarRules('taskbar'));
+    }
+    elements.minimizeToTrayToggle.addEventListener('change', () => applyTrayTaskbarRules('hide'));
 
     // Listen for refresh requests from tray
     window.electronAPI.onRefreshUsage(async () => {
@@ -431,11 +468,11 @@ function setupEventListeners() {
         }
     });
 
-    // Compact mode toggle in normal settings panel — deferred to Done click
+    // Compact mode toggle in normal settings panel — deferred to Save click
 
-    // Compact mode toggle in compact settings panel — just updates the checkbox, Done applies it
+    // Compact mode toggle in compact settings panel — just updates the checkbox, Save applies it
     elements.compactModeToggleCompact.addEventListener('change', () => {
-        // No immediate action — Done button reads this value and applies
+        // No immediate action — Save button reads this value and applies
     });
 
     // Organization selector — change triggers immediate save and refresh
@@ -450,7 +487,7 @@ function setupEventListeners() {
         }
         await loadSettings();
         elements.settingsOverlay.style.display = 'flex';
-        window.electronAPI.resizeWindow(318);
+        resizeSettingsPanel();
     });
 
     // Close compact settings — apply compact toggle value then close
@@ -603,53 +640,155 @@ const EXTRA_ROW_CONFIG = {
 const CREDIT_EXPIRY_WARN_DAYS = 21;
 const CREDIT_EXPIRY_DANGER_DAYS = 7;
 
-// Builds the credit-balance row shown beneath Monthly Spend.
-// Promo/paid split renders only when purchased credits exist (money at risk);
-// the expiry chip renders only when the next expiry is within the warn window.
-function buildCreditsRow(value) {
-    const row = document.createElement('div');
-    row.className = 'usage-section credits-row';
+// Builds the self-contained Monthly Spend + balance card. Deliberately not
+// built from the shared .usage-section grid markup used by session/weekly/
+// model rows below — that fixed-column grid fought every attempt to add a
+// second line (reset date, disclaimer, balance) without overflowing into
+// neighboring columns. See chat discussion Sep 2026 for the two rounds of
+// layout bugs that came from patching the grid instead of leaving it.
+function buildSpendCard(value, isPaused) {
+    const card = document.createElement('div');
+    card.className = 'spend-card';
+
+    // Header: label and reset date on one line, opposite ends
+    const header = document.createElement('div');
+    header.className = 'spend-card-header';
 
     const label = document.createElement('span');
-    label.className = 'usage-label credits-label';
-    // Invisible clone of the spend row's ON/OFF badge so "Credits" aligns
-    // with "Monthly Spend" regardless of badge width
-    if (value.is_enabled === true || value.is_enabled === false) {
-        const spacer = document.createElement('span');
-        spacer.className = 'extra-status badge-spacer';
-        spacer.textContent = value.is_enabled ? 'ON' : 'OFF';
-        label.appendChild(spacer);
+    label.className = 'spend-card-label';
+    if (value.is_enabled === true) {
+        const statusTag = document.createElement('span');
+        statusTag.className = 'extra-status on';
+        statusTag.textContent = 'ON';
+        label.appendChild(statusTag);
+    } else if (value.is_enabled === false) {
+        const statusTag = document.createElement('span');
+        statusTag.className = 'extra-status off';
+        statusTag.textContent = 'OFF';
+        label.appendChild(statusTag);
     }
-    label.appendChild(document.createTextNode(' Credits'));
-    row.appendChild(label);
+    label.appendChild(document.createTextNode(' Monthly spend'));
+    header.appendChild(label);
 
-    const amount = document.createElement('span');
-    amount.className = 'credits-amount';
-    amount.textContent = formatCurrency(value.balance_cents, value.currency);
-    row.appendChild(amount);
+    const rowSettings = window._cachedSettings || {};
+    const resetSpan = document.createElement('span');
+    resetSpan.className = 'spend-card-reset';
+    resetSpan.textContent = `Resets ${formatResetsAt(getSpendCapResetIso(), true, rowSettings.timeFormat || '12h', rowSettings.weeklyDateFormat || 'date')}`;
+    header.appendChild(resetSpan);
+    card.appendChild(header);
 
-    if (typeof value.paid_cents === 'number' && value.paid_cents > 0) {
-        const split = document.createElement('span');
-        split.className = 'credits-split';
-        split.textContent = `promo ${formatCurrency(value.promo_cents || 0, value.currency)} / paid ${formatCurrency(value.paid_cents, value.currency)}`;
-        row.appendChild(split);
+    // Bar — a neutral consumption indicator, not styled to look like a bill
+    const barWrap = document.createElement('div');
+    barWrap.className = 'spend-card-bar-wrap';
+    const progressBar = document.createElement('div');
+    progressBar.className = 'progress-bar spend-progress-bar';
+    const progressFill = document.createElement('div');
+    progressFill.className = 'progress-fill extra';
+    const utilization = value.utilization || 0;
+    progressFill.style.width = `${Math.min(utilization, 100)}%`;
+
+    // Paused overrides warning/danger — a muted bar regardless of utilization
+    // is the whole point: it must not look like there's still room just
+    // because the cap hasn't been reached.
+    if (isPaused) {
+        progressFill.classList.add('paused');
+    } else if (utilization >= dangerThreshold) {
+        progressFill.classList.add('danger');
+    } else if (utilization >= warnThreshold) {
+        progressFill.classList.add('warning');
     }
+    progressBar.appendChild(progressFill);
 
-    if (value.next_expires_at && typeof value.next_expiry_cents === 'number' && value.next_expiry_cents > 0) {
-        const daysLeft = Math.ceil((new Date(value.next_expires_at).getTime() - Date.now()) / 86400000);
-        if (daysLeft >= 0 && daysLeft <= CREDIT_EXPIRY_WARN_DAYS) {
-            const chip = document.createElement('span');
-            chip.className = 'credits-chip' + (daysLeft <= CREDIT_EXPIRY_DANGER_DAYS ? ' danger' : '');
-            const when = daysLeft <= CREDIT_EXPIRY_DANGER_DAYS
-                ? `in ${daysLeft}d`
-                : new Date(value.next_expires_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            chip.textContent = `${formatCurrency(value.next_expiry_cents, value.currency)} expires ${when}`;
-            chip.title = `Expires ${new Date(value.next_expires_at).toLocaleDateString()}`;
-            row.appendChild(chip);
+    // Funding-stops-here marker: the real ceiling is min(cap, balance), not
+    // just the cap. Only draw it when balance actually constrains before the
+    // cap would (markerPct < 100) — otherwise it's noise.
+    if (typeof value.balance_cents === 'number' && value.limit_cents) {
+        const markerPct = Math.min(100, (value.balance_cents / value.limit_cents) * 100);
+        if (markerPct < 100) {
+            const marker = document.createElement('div');
+            marker.className = 'funding-stop-marker';
+            marker.style.left = `${markerPct}%`;
+            marker.title = 'Funding stops here — credit balance runs out before the cap';
+            progressBar.appendChild(marker);
+        }
+    }
+    barWrap.appendChild(progressBar);
+    card.appendChild(barWrap);
+
+    // Caption: disambiguates usage from a bill, carries the paused reason
+    const caption = document.createElement('div');
+    caption.className = 'spend-card-caption';
+    if (isPaused) {
+        caption.classList.add('spend-card-caption-paused');
+        let unusedStr = '';
+        if (value.limit_cents != null && value.used_cents != null) {
+            unusedStr = ` ${formatCurrency(value.limit_cents - value.used_cents, value.currency)} of cap unused, but balance is $0.`;
+        }
+        caption.textContent = `Paused — add funds to keep going.${unusedStr}`;
+    } else if (value.used_cents != null && value.limit_cents != null) {
+        let limitStr = formatCurrency(value.limit_cents, value.currency);
+        if (value.limit_cents % 100 === 0) limitStr = limitStr.replace('.00', '');
+        const usedStr = formatCurrency(value.used_cents, value.currency);
+        const coveredNote = (typeof value.balance_cents === 'number' && value.balance_cents > 0)
+            ? ' · covered by your credit balance, not charged'
+            : '';
+        caption.textContent = `${usedStr} used of ${limitStr} cap${coveredNote}`;
+    } else {
+        caption.textContent = `${Math.round(utilization)}% used`;
+    }
+    card.appendChild(caption);
+
+    // Balance section — only when we actually have prepaid data
+    if (value.balance_cents != null) {
+        const divider = document.createElement('div');
+        divider.className = 'spend-card-divider';
+        card.appendChild(divider);
+
+        const balanceRow = document.createElement('div');
+        balanceRow.className = 'spend-card-header spend-card-balance-row';
+
+        const balanceLeft = document.createElement('div');
+        balanceLeft.className = 'spend-card-balance-left';
+        const balanceLabel = document.createElement('span');
+        balanceLabel.className = 'spend-card-label';
+        balanceLabel.textContent = 'Available balance';
+        const balanceAmount = document.createElement('div');
+        balanceAmount.className = 'spend-card-balance-amount';
+        balanceAmount.textContent = formatCurrency(value.balance_cents, value.currency);
+        balanceLeft.appendChild(balanceLabel);
+        balanceLeft.appendChild(balanceAmount);
+        balanceRow.appendChild(balanceLeft);
+
+        if (isPaused) {
+            const buyLink = document.createElement('span');
+            buyLink.className = 'spend-card-buy-link';
+            buyLink.textContent = 'Buy usage credits';
+            buyLink.addEventListener('click', () => window.electronAPI.openExternal('https://claude.ai/settings/usage'));
+            balanceRow.appendChild(buyLink);
+        } else if (value.next_expires_at && typeof value.next_expiry_cents === 'number' && value.next_expiry_cents > 0) {
+            const daysLeft = Math.ceil((new Date(value.next_expires_at).getTime() - Date.now()) / 86400000);
+            if (daysLeft >= 0 && daysLeft <= CREDIT_EXPIRY_WARN_DAYS) {
+                const chip = document.createElement('span');
+                chip.className = 'credits-chip' + (daysLeft <= CREDIT_EXPIRY_DANGER_DAYS ? ' danger' : '');
+                const when = daysLeft <= CREDIT_EXPIRY_DANGER_DAYS
+                    ? `in ${daysLeft}d`
+                    : new Date(value.next_expires_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                chip.textContent = `${formatCurrency(value.next_expiry_cents, value.currency)} expires ${when}`;
+                chip.title = `Expires ${new Date(value.next_expires_at).toLocaleDateString()}`;
+                balanceRow.appendChild(chip);
+            }
+        }
+        card.appendChild(balanceRow);
+
+        if (typeof value.paid_cents === 'number' && value.paid_cents > 0) {
+            const split = document.createElement('div');
+            split.className = 'credits-split spend-card-split';
+            split.textContent = `promo ${formatCurrency(value.promo_cents || 0, value.currency)} / paid ${formatCurrency(value.paid_cents, value.currency)}`;
+            card.appendChild(split);
         }
     }
 
-    return row;
+    return card;
 }
 
 function buildExtraRows(data) {
@@ -678,6 +817,19 @@ function buildExtraRows(data) {
         const hasBalance = key === 'extra_usage' && value && value.balance_cents != null;
         if (!hasUtilization && !hasBalance) continue;
 
+        // extra_usage renders as its own self-contained card (bar + balance),
+        // not through the shared grid-based row markup below — the fixed-
+        // column .usage-section grid fought every attempt to add a second
+        // line. See chat discussion Sep 2026.
+        if (key === 'extra_usage') {
+            const isPaused = value.is_enabled === true
+                && typeof value.balance_cents === 'number'
+                && value.balance_cents <= 0;
+            elements.extraRows.appendChild(buildSpendCard(value, isPaused));
+            count++;
+            continue;
+        }
+
         const utilization = value.utilization || 0;
         const resetsAt = value.resets_at;
         const colorClass = config.color;
@@ -685,65 +837,12 @@ function buildExtraRows(data) {
         const row = document.createElement('div');
         row.className = 'usage-section';
 
-        // Build row using DOM methods (no innerHTML)
         const label = document.createElement('span');
         label.className = 'usage-label';
-        
-        if (key === 'extra_usage') {
-            // Extra usage: ON/OFF indicator goes next to label
-            if (value.is_enabled === true) {
-                const statusTag = document.createElement('span');
-                statusTag.className = 'extra-status on';
-                statusTag.textContent = 'ON';
-                label.appendChild(statusTag);
-            } else if (value.is_enabled === false) {
-                const statusTag = document.createElement('span');
-                statusTag.className = 'extra-status off';
-                statusTag.textContent = 'OFF';
-                label.appendChild(statusTag);
-            }
-            label.appendChild(document.createTextNode(' Monthly Spend'));
-        } else {
-            label.textContent = config.label;
-        }
+        label.textContent = config.label;
         row.appendChild(label);
 
-        if (key === 'extra_usage') {
-            // Spend row uses flex (like the credits row): label | stretching bar | right-flush $ text
-            row.classList.add('spend-row');
-            const barGroup = document.createElement('div');
-            barGroup.className = 'usage-bar-group spend-bar-group';
-            const progressBar = document.createElement('div');
-            progressBar.className = 'progress-bar';
-            const progressFill = document.createElement('div');
-            progressFill.className = `progress-fill ${colorClass}`;
-            progressFill.style.width = `${Math.min(utilization, 100)}%`;
-
-            // Apply warning/danger thresholds to extra usage bar
-            if (utilization >= dangerThreshold) {
-                progressFill.classList.add('danger');
-            } else if (utilization >= warnThreshold) {
-                progressFill.classList.add('warning');
-            }
-            
-            progressBar.appendChild(progressFill);
-            barGroup.appendChild(progressBar);
-            row.appendChild(barGroup);
-
-            // Dollar text lives in the (now empty) timer+resets columns so the
-            // bar keeps the full bar-column width like the session/weekly rows
-            const spendText = document.createElement('span');
-            if (value.used_cents != null && value.limit_cents != null) {
-                spendText.className = 'usage-percentage extra-spending spend-cap-text';
-                let limitStr = formatCurrency(value.limit_cents, value.currency);
-                if (value.limit_cents % 100 === 0) limitStr = limitStr.replace('.00', '');
-                spendText.textContent = `${formatCurrency(value.used_cents, value.currency)}/${limitStr} cap`;
-            } else {
-                spendText.className = 'usage-percentage spend-cap-text';
-                spendText.textContent = `${Math.round(utilization)}%`;
-            }
-            row.appendChild(spendText);
-        } else {
+        {
             const totalMinutes = key.includes('seven_day') ? 7 * 24 * 60 : 5 * 60;
 
             const barGroup = document.createElement('div');
@@ -813,12 +912,6 @@ function buildExtraRows(data) {
 
         elements.extraRows.appendChild(row);
         count++;
-
-        // Credit balance gets its own row beneath Monthly Spend
-        if (key === 'extra_usage' && value.balance_cents != null) {
-            elements.extraRows.appendChild(buildCreditsRow(value));
-            count++;
-        }
     }
 
     // Hide toggle if no extra rows
@@ -853,17 +946,37 @@ const BANNER_HEIGHT = 28;
 const EXPAND_OVERHEAD = 28; // margin-top(12) + padding-top(6) + bottom buffer(10)
 
 function resizeWidget(bannerVisible) {
+    // A scheduled ping can refresh usage while Settings is open.
+    if (elements.settingsOverlay.style.display !== 'none') {
+        resizeSettingsPanel();
+        return;
+    }
     const hasBanner = bannerVisible !== undefined
         ? bannerVisible
         : elements.updateBanner.style.display !== 'none';
     const bannerOffset = hasBanner ? BANNER_HEIGHT : 0;
+    // Measures actual rendered height per child instead of assuming a flat
+    // WIDGET_ROW_HEIGHT for all of them. That assumption held while every
+    // extra row was a uniform ~30px line, but the spend card is taller and
+    // variable (paused state, expiry chip, promo/paid split all add lines).
+    // See chat discussion Sep 2026.
     const extraCount = elements.extraRows.children.length;
-    const expandedOffset = isExpanded && extraCount > 0
-        ? EXPAND_OVERHEAD + (extraCount * WIDGET_ROW_HEIGHT)
-        : 0;
+    let expandedOffset = 0;
+    if (isExpanded && extraCount > 0) {
+        let childrenHeight = 0;
+        for (const child of elements.extraRows.children) {
+            childrenHeight += child.getBoundingClientRect().height || WIDGET_ROW_HEIGHT;
+        }
+        expandedOffset = EXPAND_OVERHEAD + childrenHeight;
+    }
     const graphOffset = graphVisible ? GRAPH_HEIGHT : 0;
     const totalHeight = WIDGET_HEIGHT_COLLAPSED + expandedOffset + graphOffset + bannerOffset;
-    window.electronAPI.resizeWindow(totalHeight);
+    // setContentSize (behind resizeWindow, main.js) is a native Electron
+    // binding requiring integer pixels. getBoundingClientRect().height above
+    // returns sub-pixel floats, which setContentSize rejects outright with a
+    // "conversion failure" crash — this broke the panel entirely on restart.
+    // See chat discussion Sep 2026.
+    window.electronAPI.resizeWindow(Math.round(totalHeight));
 }
 
 function normalizeUsageData(data) {
@@ -1291,6 +1404,16 @@ function updateProgressBar(progressElement, percentageElement, value, isWeekly =
 // Format reset date for the "Resets At" column
 // Session: shows time like "3:59 PM" or "15:59"
 // Weekly: shows date like "Mar 13", "Fri Mar 13", or "Fri Mar 13 3:59 PM"
+// Computes the ISO timestamp for the prepaid/spend-cap monthly reset (1st of
+// next calendar month, local midnight). Not returned by any API field — see
+// chat discussion Sep 2026 confirming usage/spend endpoints have no resets_at
+// for the cap cycle, unlike five_hour/seven_day/limits[].
+function getSpendCapResetIso() {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return next.toISOString();
+}
+
 function formatResetsAt(resetsAt, isWeekly, timeFormat, weeklyDateFormat) {
     if (!resetsAt) return '—';
     const date = new Date(resetsAt);
@@ -1316,6 +1439,9 @@ function formatResetsAt(resetsAt, isWeekly, timeFormat, weeklyDateFormat) {
         const fmt = weeklyDateFormat || 'date';
         if (fmt === 'date-day') return `${dayStr} ${monthStr} ${dayNum}`;
         if (fmt === 'date-day-time') return `${dayStr} ${monthStr} ${dayNum} ${formatTime(date)}`;
+        if (fmt === 'date-dmy') return `${dayNum} ${monthStr}`;
+        if (fmt === 'date-day-dmy') return `${dayStr} ${dayNum} ${monthStr}`;
+        if (fmt === 'date-day-time-dmy') return `${dayStr} ${dayNum} ${monthStr} ${formatTime(date)}`;
         return `${monthStr} ${dayNum}`; // default: 'date'
     } else {
         return formatTime(date);
@@ -1442,20 +1568,56 @@ function showMainContent() {
 }
 
 // Auto-update management
-function startAutoUpdate() {
-    stopAutoUpdate();
+// Jitter cap: ±25% of the configured interval, so a herd of widget instances
+// does not all hit Claude.ai at exactly the same tick. Applied to the delay
+// before each fetch, not the timer period itself, so a slow fetch does not
+// cause a missed tick. (credit: mtspl, PR #114, for the jitter design)
+const JITTER_FRACTION = 0.25;
+let _autoUpdateStopped = true;
+
+function scheduleAutoUpdate() {
+    // Clear any pending timer directly here — deliberately NOT calling
+    // stopAutoUpdate() for this internal cleanup step, since that also sets
+    // _autoUpdateStopped = true as a side effect. Reusing it here was the
+    // actual bug in PR #114's original version as submitted: nothing ever
+    // reset the flag back to false before the recursive
+    // `if (!_autoUpdateStopped) scheduleAutoUpdate()` check at the end of
+    // each tick ran, so auto-refresh fired once after startAutoUpdate() and
+    // then silently died for the rest of the session — every time, not
+    // under some rare timing condition. Found and fixed during review
+    // before merging, confirmed via a live multi-cycle test.
+    if (updateInterval) {
+        clearTimeout(updateInterval);
+        updateInterval = null;
+    }
     const settings = window._cachedSettings || {};
     const intervalSecs = parseInt(settings.refreshInterval) || 300;
-    updateInterval = setInterval(async () => {
+    const baseMs = intervalSecs * 1000;
+    const jitter = baseMs * JITTER_FRACTION * (Math.random() * 2 - 1);
+    const delay = Math.max(1000, Math.round(baseMs + jitter));
+    updateInterval = setTimeout(async () => {
         if (elements.refreshBtn) elements.refreshBtn.classList.add('spinning');
-        await fetchUsageData();
-        if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
-    }, intervalSecs * 1000);
+        try {
+            await fetchUsageData();
+        } finally {
+            if (elements.refreshBtn) elements.refreshBtn.classList.remove('spinning');
+            // Schedule the next tick only after this fetch completes (success
+            // or fail), so an in-flight 429 retry never overlaps with the
+            // next auto-refresh.
+            if (!_autoUpdateStopped) scheduleAutoUpdate();
+        }
+    }, delay);
+}
+
+function startAutoUpdate() {
+    _autoUpdateStopped = false;
+    scheduleAutoUpdate();
 }
 
 function stopAutoUpdate() {
+    _autoUpdateStopped = true;
     if (updateInterval) {
-        clearInterval(updateInterval);
+        clearTimeout(updateInterval);
         updateInterval = null;
     }
 }
@@ -1746,11 +1908,234 @@ style.textContent = `
 document.head.appendChild(style);
 
 // Settings management
+const SETTINGS_MIN_HEIGHT = 318;
+const SETTINGS_MAX_HEIGHT = 560;
+
+/**
+ * Measure the height the settings panel needs.
+ *
+ * The panel is absolutely positioned inside the widget, so it can never grow
+ * the window on its own — the rows just get squeezed and the footer is
+ * clipped. Measuring the natural height (rows temporarily un-flexed so they
+ * report their real size) means adding or wrapping a row can't clip the
+ * panel again. Ported from bastionecho's PR #115.
+ */
+function measureSettingsHeight() {
+    const content = elements.settingsOverlay.querySelector('.settings-content');
+    const rows = content && content.querySelector('.settings-rows');
+    if (!content || !rows) return SETTINGS_MIN_HEIGHT;
+
+    const previousContentHeight = content.style.height;
+    const previousContentWidth = content.style.width;
+    const previousRowsFlex = rows.style.flex;
+
+    content.style.height = 'auto';
+    // Pin the width to the normal (non-compact) widget width — WIDGET_WIDTH in
+    // main.js — so opening settings from compact mode doesn't measure rows
+    // that are still wrapped at the narrow width.
+    content.style.width = '530px';
+    rows.style.flex = 'none';
+    const naturalHeight = content.scrollHeight;
+
+    content.style.height = previousContentHeight;
+    content.style.width = previousContentWidth;
+    rows.style.flex = previousRowsFlex;
+
+    return Math.min(SETTINGS_MAX_HEIGHT, Math.max(SETTINGS_MIN_HEIGHT, Math.ceil(naturalHeight) + 2));
+}
+
 let warnThreshold = 75;
 let dangerThreshold = 90;
+// Last taskbar-stats value the user chose themselves, restored when the toggle
+// is re-enabled after "Hide from taskbar" is switched back off.
+let taskbarStatsPreference = false;
+
+/**
+ * Single decision point for the three-way relationship between "Show tray
+ * stats", "Show taskbar stats", and "Hide from taskbar". Every toggle's
+ * change listener calls this with which one it is, and loadSettings() calls
+ * it with 'init' after applying stored values. Nothing outside this function
+ * reaches into another toggle's .checked directly - one area of code, one
+ * outcome, instead of the old two-listener version where Hide-from-taskbar
+ * and Show-tray-stats each carried their own copy of the same decision.
+ *
+ * Rules:
+ *  - Show tray stats and Show taskbar stats are mutually exclusive - only
+ *    one can be on at a time.
+ *  - Hide from taskbar requires Show tray stats on (it's the only way back
+ *    in once the window is hidden) and forces Show taskbar stats off and
+ *    disabled (there's no taskbar button left to draw stats on).
+ *
+ * @param {'tray'|'taskbar'|'hide'|'init'} source - which toggle the user
+ *   just changed, or 'init' to reconcile disabled/hint display on load
+ *   without treating any toggle as a fresh user action.
+ */
+function applyTrayTaskbarRules(source) {
+    const trayEl = elements.showTrayStatsToggle;
+    const taskbarEl = elements.showTaskbarStatsToggle;
+    const hideEl = elements.minimizeToTrayToggle;
+    if (!trayEl || !taskbarEl || !hideEl) return;
+
+    if (source === 'tray') {
+        if (trayEl.checked && taskbarEl.checked) {
+            taskbarEl.checked = false;
+            taskbarStatsPreference = false;
+        }
+        if (!trayEl.checked && hideEl.checked) {
+            // No tray icon left as a way back in - can't stay hidden.
+            hideEl.checked = false;
+        }
+    } else if (source === 'taskbar') {
+        taskbarStatsPreference = taskbarEl.checked;
+        if (taskbarEl.checked) {
+            trayEl.checked = false;
+        }
+    } else if (source === 'hide') {
+        if (hideEl.checked) {
+            trayEl.checked = true;
+            if (taskbarEl.checked) taskbarStatsPreference = false;
+            taskbarEl.checked = false;
+        } else {
+            // Restore the user's own taskbar-stats preference now that a
+            // taskbar presence exists again, respecting the tray/taskbar
+            // exclusivity above.
+            taskbarEl.checked = taskbarStatsPreference && !trayEl.checked;
+        }
+    }
+
+    taskbarEl.disabled = hideEl.checked;
+    if (elements.taskbarStatsCol) {
+        elements.taskbarStatsCol.classList.toggle('settings-col-disabled', hideEl.checked);
+    }
+    if (elements.taskbarStatsHint) {
+        elements.taskbarStatsHint.style.display = hideEl.checked ? 'inline' : 'none';
+    }
+
+    // The "Hidden from Taskbar" hint wraps to two lines, which changes the
+    // panel's natural content height - measureSettingsHeight() only runs
+    // once when Settings is first opened, so re-run it here whenever the
+    // hint's visibility (and therefore layout height) could have just
+    // changed while the panel is already open. No-op while Settings is
+    // closed, so 'init' (called during loadSettings on app start, before
+    // the overlay has ever been shown) doesn't resize the main window.
+    if (elements.settingsOverlay && elements.settingsOverlay.style.display === 'flex') {
+        window.electronAPI.resizeWindow(measureSettingsHeight());
+    }
+}
+
+let starterSnapshot = null;
+// --- starter time control ---
+// The native <input type="time"> always follows the OS locale, so it cannot honor
+// the app's own Time format setting. These selects edit the same 24h "HH:MM" value
+// (starterTime24) and display it in whichever format the user chose.
+let starterTime24 = '06:00';
+const STARTER_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const starterPad = n => String(n).padStart(2, '0');
+const starterUses24h = () => (elements.timeFormat.value || '12h') === '24h';
+function renderStarterTime() {
+    const use24 = starterUses24h();
+    const hourSel = document.getElementById('sessionStartHour');
+    const minuteSel = document.getElementById('sessionStartMinute');
+    const periodSel = document.getElementById('sessionStartPeriod');
+    const fill = (select, items) => select.replaceChildren(...items.map(([value, label]) => new Option(label, value)));
+    const [h, m] = starterTime24.split(':').map(Number);
+    fill(hourSel, use24
+        ? Array.from({ length: 24 }, (_, i) => [String(i), starterPad(i)])
+        : Array.from({ length: 12 }, (_, i) => [String(i + 1), String(i + 1)]));
+    if (!minuteSel.options.length) fill(minuteSel, Array.from({ length: 60 }, (_, i) => [String(i), starterPad(i)]));
+    if (!periodSel.options.length) fill(periodSel, [['AM', 'AM'], ['PM', 'PM']]);
+    hourSel.value = String(use24 ? h : (h % 12 || 12));
+    minuteSel.value = String(m);
+    periodSel.value = h >= 12 ? 'PM' : 'AM';
+    periodSel.hidden = use24;
+}
+function readStarterTime() {
+    let h = Number(document.getElementById('sessionStartHour').value);
+    const m = Number(document.getElementById('sessionStartMinute').value);
+    if (!starterUses24h()) h = (h % 12) + (document.getElementById('sessionStartPeriod').value === 'PM' ? 12 : 0);
+    starterTime24 = `${starterPad(h)}:${starterPad(m)}`;
+}
+// --- end starter time control ---
+let starterListenersReady = false;
+function starterConfigFromUI() {
+    return {
+        enabled: document.getElementById('sessionStartEnabled').checked,
+        time: starterTime24,
+        mode: document.querySelector('input[name="sessionStartMode"]:checked').value,
+        model: 'claude-haiku-4-5-20251001'
+    };
+}
+function resizeSettingsPanel() {
+    if (elements.settingsOverlay.style.display === 'none') return;
+    window.electronAPI.resizeWindow(measureSettingsHeight());
+}
+const STARTER_HELP = {
+    local: [
+        'Sends a tiny Haiku prompt daily to start your 5-hour session.',
+        'Needs this PC awake, online, and the widget running.',
+        'Skipped if a session is already active or the start time was missed.',
+        'Uses a small amount of your allowance.'
+    ],
+    cloud: [
+        'Runs a tiny daily Haiku prompt on Anthropic\u2019s servers, even with this PC off.',
+        'Can\u2019t check for an active session first. Time is saved in UTC: re-Save after DST changes.',
+        'Uninstalling the widget won\u2019t stop it: turn it off here or manage it in Claude.',
+        'Uses a small amount of your allowance.'
+    ]
+};
+const STARTER_CAPTION = {
+    local: 'Runs on this PC while the widget is open.',
+    cloud: 'Runs on Anthropic\u2019s servers, even when this PC is off.'
+};
+function updateStarterDetails() {
+    const { mode } = starterConfigFromUI();
+    document.getElementById('sessionStartInfo').title = STARTER_HELP[mode].join('\n');
+    document.getElementById('sessionStartCaption').textContent = STARTER_CAPTION[mode];
+    resizeSettingsPanel();
+}
+function renderStarterStatus(snapshot) {
+    starterSnapshot = snapshot;
+    const status = document.getElementById('sessionStartStatus');
+    const failed = /could not|stopped:|blocked/i.test(snapshot.status);
+    status.textContent = failed ? snapshot.status : '';
+    status.hidden = !failed;
+    document.getElementById('sessionStartManage').hidden = !snapshot.routineId;
+    resizeSettingsPanel();
+}
+async function loadSessionStarterSettings() {
+    const snapshot = await window.electronAPI.getSessionStarter();
+    document.getElementById('sessionStartEnabled').checked = snapshot.config.enabled;
+    starterTime24 = STARTER_TIME_RE.test(snapshot.config.time) ? snapshot.config.time : '06:00';
+    renderStarterTime();
+    document.querySelector(`input[name="sessionStartMode"][value="${snapshot.config.mode}"]`).checked = true;
+    if (!starterListenersReady) {
+        starterListenersReady = true;
+        // Registered before the generic listener below so starterTime24 is current when it runs.
+        for (const id of ['sessionStartHour', 'sessionStartMinute', 'sessionStartPeriod']) {
+            document.getElementById(id).addEventListener('change', readStarterTime);
+        }
+        elements.timeFormat.addEventListener('change', () => { renderStarterTime(); resizeSettingsPanel(); });
+        for (const input of document.querySelectorAll('.session-starter input, .session-starter select')) {
+            input.addEventListener('change', updateStarterDetails);
+        }
+        document.getElementById('sessionStartManage').addEventListener('click', () => {
+            if (starterSnapshot?.routineId) window.electronAPI.openExternal(`https://claude.ai/code/routines/${encodeURIComponent(starterSnapshot.routineId)}`);
+        });
+        window.electronAPI.onSessionStarterStatus(renderStarterStatus);
+    }
+    renderStarterStatus(snapshot);
+    updateStarterDetails();
+}
+async function saveSessionStarterSettings() {
+    if (!STARTER_TIME_RE.test(starterTime24)) throw new Error('Choose a valid session start time.');
+    const result = await window.electronAPI.saveSessionStarter(starterConfigFromUI());
+    if (result.snapshot) renderStarterStatus(result.snapshot);
+    if (!result.success) throw new Error(result.error);
+}
 
 async function loadSettings() {
     const settings = await window.electronAPI.getSettings();
+    await loadSessionStarterSettings();
     const isLinux = window.electronAPI.platform === 'linux';
     const isPortable = window.electronAPI.isPortable;
     const autoStartUnsupported = isLinux || isPortable;
@@ -1769,9 +2154,22 @@ async function loadSettings() {
     elements.minimizeToTrayToggle.checked = settings.minimizeToTray;
     elements.alwaysOnTopToggle.checked = settings.alwaysOnTop;
     elements.showTrayStatsToggle.checked = settings.showTrayStats || false;
+
+    // Taskbar stats are Windows-only: setIcon() does nothing on macOS, and Linux
+    // desktops take the taskbar icon from the .desktop entry.
+    const isWindows = window.electronAPI.platform === 'win32';
+    if (elements.taskbarStatsCol) {
+        elements.taskbarStatsCol.style.display = isWindows ? '' : 'none';
+    }
+    if (elements.showTaskbarStatsToggle) {
+        taskbarStatsPreference = settings.showTaskbarStats === true;
+        elements.showTaskbarStatsToggle.checked = taskbarStatsPreference && !elements.minimizeToTrayToggle.checked;
+        applyTrayTaskbarRules('init');
+    }
     elements.warnThreshold.value = settings.warnThreshold;
     elements.dangerThreshold.value = settings.dangerThreshold;
     elements.timeFormat.value = settings.timeFormat || '12h';
+    renderStarterTime();
     elements.weeklyDateFormat.value = settings.weeklyDateFormat || 'date';
     if (elements.refreshInterval) elements.refreshInterval.value = settings.refreshInterval || '300';
     elements.usageAlertsToggle.checked = settings.usageAlerts !== false;
@@ -1814,6 +2212,9 @@ async function saveSettings() {
         minimizeToTray: elements.minimizeToTrayToggle.checked,
         alwaysOnTop: elements.alwaysOnTopToggle.checked,
         showTrayStats: elements.showTrayStatsToggle.checked,
+        // Store the user's own choice, not the forced-off value used while
+        // "Hide from taskbar" is on — so it comes back when they unhide.
+        showTaskbarStats: taskbarStatsPreference,
         theme: activeThemeBtn ? activeThemeBtn.dataset.theme : 'dark',
         warnThreshold: warn,
         dangerThreshold: danger,

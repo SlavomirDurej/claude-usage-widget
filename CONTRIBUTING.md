@@ -43,9 +43,11 @@ Thank you for your interest in contributing! This guide will help you set up you
 **Features to test:**
 - Drag widget around screen
 - Refresh button updates data
-- Minimize to system tray (Windows/Linux) or Dock (macOS)
-- Right-click tray icon shows menu
+- Minimize tucks away (taskbar/tray icon stays visible as the way back in, unless "Hide from taskbar" is on)
+- Close (X, Alt+F4, or "Close window") fully quits the app
+- Right-click tray icon shows menu, "Exit" fully quits
 - System tray usage indicators (dual icons on Windows)
+- Taskbar usage icon (Windows, opt-in — split session/weekly panels on the taskbar icon)
 - Progress bars animate smoothly
 - Timers count down correctly
 - Organization selector (if you have Teams + Personal)
@@ -60,6 +62,9 @@ claude-usage-widget/
 ├── package.json                 # Dependencies & build config
 ├── src/
 │   ├── fetch-via-window.js      # Login flow handler
+│   ├── normalize-usage-limits.js # Usage-percentage normalization
+│   ├── detect-active-credit-spend.js # Forces meter to 100% on active credit spend
+│   ├── domain-whitelist.js      # User-editable login-window domain allowlist
 │   └── renderer/
 │       ├── index.html           # Widget UI
 │       ├── app.js               # Frontend logic
@@ -125,6 +130,16 @@ Force specific percentages in `main.js` for testing:
 const weeklyIcon = generatePercentageIcon(99, weeklyColor); // Test Red X
 ```
 
+### Test Taskbar Icon (Windows)
+Opt-in feature (Settings → "Show taskbar stats", off by default). Single icon on the main window's own taskbar button (`mainWindow.setIcon()`) — no second window, no separate AppUserModelID. Split into left (session) and right (weekly) panels with a divider between them.
+
+Force specific percentages for testing via `generateTaskbarIcon(sessionPercent, weeklyPercent, warnThreshold, dangerThreshold)`, same threshold-color/99%-X-glyph logic as the tray icons, drawn at full 128px so both panels stay legible after Windows downscales to real taskbar size.
+
+Known gotchas if you're working in this area:
+- Drawn at 128x128 deliberately — a tray-sized (20px) icon upscaled to taskbar size would be blurry; drawing large and letting Windows downscale keeps both panels legible across DPI settings.
+- If Windows taskbar icons look stuck, wrong-sized, or a test window won't behave, a stale Explorer process from a prior bad state is a common cause — Task Manager → Windows Explorer → Restart before concluding it's a code bug.
+- See the "Windows Taskbar/AppUserModelID Icon Corruption (general)" note further down if an icon refuses to update no matter what the code does.
+
 ### Mock API Response
 For testing UI without live API calls, add to `fetchUsageData()` in `app.js`:
 ```javascript
@@ -185,8 +200,12 @@ app.whenReady().then(() => {
 ### Manual Testing Checklist
 - [ ] Clean install on target OS
 - [ ] Login flow works
+- [ ] Domain whitelist CLI (`--whitelist-add`/`--whitelist-remove`/`--whitelist-list`) works and is global across profiles
+- [ ] Both system tray icons show on Linux/Wayland, not just weekly (Issue #119)
 - [ ] Data refreshes correctly
 - [ ] Tray icons display properly
+- [ ] Taskbar icon displays properly (Windows, if enabled)
+- [ ] Close (X/Alt+F4) fully quits; minimize keeps a tray/taskbar icon as the way back in
 - [ ] Settings persist across restarts
 - [ ] Logout clears session
 - [ ] Auto-update check works
@@ -230,6 +249,13 @@ Check `main.js` → `did-finish-load` event handler:
 2. sessionKey cookie must be present
 3. Organization ID extraction may fail on new account types
 
+### Login Window Blocked by Domain Allowlist
+`[Security] Blocked login navigation to untrusted domain: ...` in the console means the login window tried to navigate somewhere outside `LOGIN_ALLOWED_DOMAINS` (`main.js`) and `src/domain-whitelist.js`'s user-added entries. This is expected behavior for genuinely untrusted domains — but enterprise SSO (WorkOS, Okta, custom SAML/OIDC IdPs) legitimately redirects through domains that can't all be hardcoded in advance, since they're customer-specific.
+
+Two things worth knowing while working in this area:
+- **This is by design, additive-only, not a bug to "fix" by loosening the hardcoded list.** `LOGIN_ALLOWED_DOMAINS` should stay minimal and fixed; `--whitelist-add`/`--whitelist-remove`/`--whitelist-list` (see README's "Custom Login Domain Whitelist" section) is the intended escape hatch, self-serviceable by whoever hits it, without needing a code change per-organization's IdP.
+- **SSO can involve more than one redirect hop.** A user whitelisting the broker's domain (e.g. `api.workos.com`) may still get blocked on the *next* hop, when the broker redirects to their own org's actual IdP. That's expected, not a bug in this feature — check the console for which domain got blocked and whitelist that one too. Don't assume one report of "still blocked after whitelisting X" means the whitelist mechanism itself failed; check whether it's actually a *different* domain being blocked now.
+
 ### API Returns 401 Unauthorized
 Session expired. Test re-login flow from tray menu.
 
@@ -237,6 +263,25 @@ Session expired. Test re-login flow from tray menu.
 - Check `updateTrayIcons()` is called after data fetch
 - Verify `generatePercentageIcon()` returns valid NativeImage
 - Windows: Icon cache may need refresh (restart Explorer)
+
+### Second Tray Icon Missing on Linux (Issue #119)
+Root-caused and fixed — see the full writeup in `STAGED_CHANGES.md` for how this was diagnosed. Summary for anyone hitting a related symptom:
+
+- **Mechanism:** Electron's Linux tray backend only gives the *first* `Tray()` instance in a process real StatusNotifierItem (SNI) support (documented in [Electron's own Tray docs](https://www.electronjs.org/docs/latest/api/tray)); every subsequent instance falls back to the older `GtkStatusIcon` protocol, which has no working implementation under native Wayland.
+- **Fix is a self-relaunch, not `app.commandLine.appendSwitch()`.** A first attempt used `appendSwitch('ozone-platform', 'x11')` as `main.js`'s first executable statement — technically the earliest point in JS, but Chromium's native Ozone/platform-backend selection happens in C++ *before* Electron hands control to this script, so the switch landed too late and produced a broken half-X11/half-Wayland hybrid (confirmed live: zero tray icons, `XGetWindowAttributes` failures — worse than the original bug). The shipped fix instead relaunches the process once with the flag baked into real `argv` (`app.relaunch({ args: ... .concat(['--ozone-platform=x11']) })` + `app.exit(0)`, guarded against looping by checking whether the flag is already present) — a genuine command-line argument present from process start, which Chromium's native layer does parse in time. **If you ever need to force an Ozone/platform-level Chromium flag from within Electron's JS layer again, assume `appendSwitch()` won't be early enough and reach for a relaunch instead** — this cost real debugging time once already.
+- **If you're debugging something that looks similar but isn't fixed by this:** confirm you're actually testing on a *real* Linux/Wayland session, not X11 — the fix is gated to Wayland only (`process.env.XDG_SESSION_TYPE === 'wayland'`) and does nothing on X11, where this was never broken.
+- **`busctl --user introspect org.kde.StatusNotifierWatcher /StatusNotifierWatcher | grep -i registered`** is the fastest way to check ground truth on KDE — shows exactly which items are actually registered on the bus, independent of whether anything visually renders in the tray.
+- **Known gap, not yet fixed:** this was only verified against Electron 41.x (this app's current pinned range, `^41.10.1`). Ad hoc testing against Electron 43.4.1 showed the fix *not* working — zero tray items registered at all, worse than the original bug. **Do not bump the Electron dependency past 41.x without manually re-testing both system tray icons on a real Linux/Wayland session first** — this isn't caught by any automated check, and is exactly the kind of platform-specific regression that shipped unnoticed in v1.7.6 originally.
+- **General approach if this resurfaces differently:** a real Linux VM (not a hand-layered hybrid — install the actual matching desktop-environment spin ISO, e.g. Fedora's real KDE Plasma spin, not a generic edition with the desktop package bolted on afterward) plus manually bisecting the Electron dependency version (hold app code fixed, only change `package.json`'s `electron` version, `rm -rf node_modules package-lock.json && npm install` between each) is what actually found the previous root cause. Reading the code alone did not — the regression was in Electron's own Linux tray backend, not this app's code.
+
+### Windows Taskbar/AppUserModelID Icon Corruption (general)
+Not specific to any current feature — this can affect `mainWindow`'s own taskbar icon, since it carries an AUMID (`app.setAppUserModelId()`) regardless of any per-feature icon drawing.
+
+- If icons look visually stuck or wrong-sized, restart Explorer before assuming it's a code issue.
+- If a taskbar icon refuses to update no matter what the code does — `setIcon()` completes without throwing, but the taskbar button shows a stale or generic default icon regardless — and a reboot, `ie4uinit -ClearIconCache`, and Explorer restart *all* fail to fix it, the cause is likely stale Windows Shell state cached against that window's AppUserModelID specifically (Jump List "Automatic Destinations" data persists separately from the general icon cache and doesn't get cleared by any of the above). Confirm and fix in one step with `--reset-aumid` (see README's "Recovering a Stuck Taskbar Icon" section) — it saves a fresh, never-before-seen AUMID for the target profile; if the icon comes back clean on the next launch, that confirms the cause.
+- **Confirmed working against a real corrupted install** (Aug 2026): a default-profile install stuck showing Windows' generic fallback icon — not just visually wrong-sized, but unresolvable — was fixed by `--reset-aumid` followed by a normal relaunch. Root cause of *why* an identity's Shell state gets into this state is still not confirmed (see caveat below), but the reset itself is now a proven fix for the symptom, not just a diagnostic theory.
+- **Caveat, still open:** the app previously shipped a fix based on this theory (scoping the AUMID per `--profile`, and guarding a periodic `setAlwaysOnTop()` interval that was hammering the icon ~720x/hour). The same symptom recurred on a long-running profile with that fix in place, so what triggers the corruption in the first place is still not confirmed — only that resetting the identity resolves it once it's happened. Don't assume a specific trigger (the interval, taskbar-stats refreshes, uptime, etc.) without fresh evidence; `--reset-aumid` is the reliable fix regardless of which trigger turns out to be responsible.
+- **Worth watching, not a new risk:** `mainWindow`'s AUMID was never removed — it's baseline app identity (Jump Lists, taskbar grouping), unrelated to any taskbar-stats feature and present whether or not taskbar stats are on. What *is* new is the taskbar-stats feature calling `mainWindow.setIcon()` on every usage refresh (default every 5 minutes) via `updateTaskbarIcon()` — far less frequent than the ~720x/hour interval that was hammering it before, and without the extra per-window AUMID (`win.setAppDetails()`) the two-window version added for its second window. If taskbar-icon corruption is reported again, check whether it correlates with taskbar stats being enabled before assuming it's unrelated — but don't conflate this with "AUMID usage was reintroduced," since it never left.
 
 ## Submitting Contributions
 

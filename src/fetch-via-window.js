@@ -18,6 +18,11 @@ const { BrowserWindow } = require('electron');
  * Known error signatures returned when Claude.ai blocks or changes behaviour.
  * If the extracted body matches one of these patterns we throw a specific error
  * so callers can react (e.g. prompt re-login).
+ *
+ * Note: 429 rate-limit responses are classified separately as `RateLimited`
+ * (transient — caller may retry without invalidating the session). The
+ * patterns below identify session-bound conditions, where retrying with the
+ * same cookie will not help.
  */
 const BLOCKED_SIGNATURES = [
   { pattern: 'Just a moment', error: 'CloudflareBlocked' },
@@ -26,11 +31,33 @@ const BLOCKED_SIGNATURES = [
 ];
 
 /**
+ * Transient rate-limit signatures — these do NOT indicate an invalid session
+ * and are safe to retry with backoff. Checked before BLOCKED_SIGNATURES so
+ * that a Cloudflare-served 429 page is classified as rate-limit, not block.
+ */
+const RATE_LIMIT_SIGNATURES = [
+  'rate limit',
+  'too many requests',
+  '"status":429',
+  '"status": 429',
+];
+
+/**
  * Parse and validate response body text
  * @param {string} bodyText - Raw body text from the page * @returns {Object} Parsed JSON data
  * @throws {Error} If blocked signatures detected or JSON parsing fails
  */
 function parseResponseBody(bodyText) {
+  // Classify rate-limit responses separately from session-bound blocks.
+  // Callers can retry RateLimited with exponential backoff without
+  // invalidating sessionKey/organizationId.
+  const lower = bodyText.toLowerCase();
+  for (const sig of RATE_LIMIT_SIGNATURES) {
+    if (lower.includes(sig)) {
+      throw new Error(`RateLimited: ${bodyText.substring(0, 200)}`);
+    }
+  }
+
   // Detect known block/failure signatures before attempting JSON parse.
   // This provides explicit errors when Claude.ai modifies their API or CSP.
   for (const sig of BLOCKED_SIGNATURES) {
