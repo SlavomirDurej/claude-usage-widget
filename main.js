@@ -66,6 +66,12 @@ const LOGIN_ALLOWED_DOMAINS = [
   'login.microsoftonline.com'
 ];
 
+// Google sign-in hops through the account's country domain mid-flow
+// (accounts.google.co.kr/accounts/SetSID for a Korean account), so
+// accounts.google.com alone closes the sign-in halfway. Exactly accounts.google
+// plus one country suffix: .com, .de, .co.kr, .com.au — nothing longer.
+const GOOGLE_ACCOUNTS_HOST = /^accounts\.google\.(com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/;
+
 // Profile isolation: --profile=<name> launches a fully separate instance with its own
 // session, cookies, and settings. Must be set before anything reads app.getPath('userData').
 const fs = require('fs');
@@ -1862,25 +1868,35 @@ ipcMain.handle('detect-session-key', async () => {
     // the whole app, just of the login window itself.
     const userWhitelist = loadWhitelist(baseUserDataPath);
 
-    loginWin.webContents.on('will-navigate', (event, url) => {
-      try {
-        const hostname = new URL(url).hostname;
-        const result = isHostnameAllowed(hostname, LOGIN_ALLOWED_DOMAINS, userWhitelist);
+    // Sign-in URLs carry session tokens in their query strings; log the host only.
+    const hostOf = (url) => {
+      try { return new URL(url).host; } catch (err) { return '(invalid URL)'; }
+    };
+
+    // One trust decision for the login window and any sign-in popup it opens.
+    const checkLoginUrl = (url) => {
+      let hostname;
+      try { hostname = new URL(url).hostname; } catch (err) { return { allowed: false }; }
+      if (GOOGLE_ACCOUNTS_HOST.test(hostname)) return { allowed: true, source: 'builtin' };
+      return isHostnameAllowed(hostname, LOGIN_ALLOWED_DOMAINS, userWhitelist);
+    };
+
+    const guardNavigation = (win) => {
+      win.webContents.on('will-navigate', (event, url) => {
+        const result = checkLoginUrl(url);
         if (!result.allowed) {
           event.preventDefault();
-          console.warn('[Security] Blocked login navigation to untrusted domain:', url);
+          console.warn('[Security] Blocked login navigation to untrusted domain:', hostOf(url));
         } else {
           if (result.source === 'user') {
-            console.log(`[Security] Allowed navigation to ${hostname} (user-whitelisted via "${result.matchedEntry}")`);
+            console.log(`[Security] Allowed navigation to ${hostOf(url)} (user-whitelisted via "${result.matchedEntry}")`);
           }
           // Update title bar to show current URL (read-only)
-          loginWin.setTitle(`Claude Login - ${url}`);
+          win.setTitle(`Claude Login - ${url}`);
         }
-      } catch (err) {
-        event.preventDefault();
-        console.warn('[Security] Blocked login navigation with invalid URL:', url);
-      }
-    });
+      });
+    };
+    guardNavigation(loginWin);
 
     // Update title on OAuth redirects and in-page navigation
     loginWin.webContents.on('did-navigate', (event, url) => {
@@ -1891,10 +1907,38 @@ ipcMain.handle('detect-session-key', async () => {
       loginWin.setTitle(`Claude Login - ${url}`);
     });
 
-    // Security: block popup windows from login page
-    loginWin.webContents.setWindowOpenHandler(() => {
-      console.warn('[Security] Blocked popup window attempt from login page');
+    // Security: popups only toward trusted domains. claude.ai runs its
+    // provider sign-in (Google) in a popup, and denying every popup surfaced
+    // on the page as a bare "error during login". about:blank is allowed
+    // because a sign-in popup is often opened blank and pointed at the
+    // provider afterwards; the did-navigate check below closes it if it lands
+    // anywhere untrusted, and it may not open popups of its own.
+    loginWin.webContents.setWindowOpenHandler(({ url }) => {
+      if (url === 'about:blank' || checkLoginUrl(url).allowed) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            parent: loginWin,
+            width: 500,
+            height: 650,
+            autoHideMenuBar: true,
+            webPreferences: { nodeIntegration: false, contextIsolation: true }
+          }
+        };
+      }
+      console.warn('[Security] Blocked popup window from login page:', hostOf(url));
       return { action: 'deny' };
+    });
+
+    loginWin.webContents.on('did-create-window', (popup) => {
+      guardNavigation(popup);
+      popup.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      popup.webContents.on('did-navigate', (event, url) => {
+        if (!checkLoginUrl(url).allowed) {
+          console.warn('[Security] Closed login popup on untrusted domain:', hostOf(url));
+          popup.close();
+        }
+      });
     });
 
     // Listen for sessionKey cookie being set after login
